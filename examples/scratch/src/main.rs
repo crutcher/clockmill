@@ -1,23 +1,34 @@
-use std::time::Instant;
+#![allow(unused)]
+use bimm_contracts::{assert_shape_contract_periodically, unpack_shape_contract};
 use burn::backend::Cuda;
-use burn::prelude::{s, Backend, Bool, Tensor};
-use burn::tensor::Distribution;
+use burn::prelude::{Backend, Bool, Int, Tensor, s};
 use burn::tensor::DType::F16;
+use burn::tensor::Distribution;
 use burn::tensor::module::unfold4d;
 use burn::tensor::ops::UnfoldOptions;
 use clap::Parser;
 use indicatif::ProgressBar;
+use std::time::Instant;
 
+/// Conway's Game of Life demo for Burn.
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(long_about = None)]
 pub struct Args {
     /// The number of steps to run.
-    #[arg(long, default_value = "1000")]
+    #[arg(long, default_value = "10000")]
     pub steps: usize,
 
     /// The width and height of the grid.
     #[arg(long, default_value = "1000")]
     pub grid_size: usize,
+
+    /// Use `Tensor::unfold()` views.
+    #[arg(long, default_value = "false")]
+    pub unfold: bool,
+
+    /// The fraction of steps to use for warmup.
+    #[arg(long, default_value_t = 10)]
+    pub warmup_fraction: usize,
 }
 
 fn main() {
@@ -27,28 +38,72 @@ fn main() {
 }
 
 fn run<B: Backend>(args: &Args) {
+    println!("Args: {:?}", args);
+
     let device = Default::default();
 
-    let n = args.grid_size;
-    let k = args.steps;
-    let warmup = k/10;
+    let warmup = args.steps / args.warmup_fraction;
 
-    let mut state: Tensor::<B, 2, Bool> = Tensor::<B, 2>::random([n, n], Distribution::Default, &device).greater_elem(0.5);
+    let mut state: Tensor<B, 2, Bool> = Tensor::<B, 2>::random(
+        [args.grid_size, args.grid_size],
+        Distribution::Default,
+        &device,
+    )
+    .greater_elem(0.5);
 
     let mut t0: Instant = Instant::now();
-    let bar = ProgressBar::new(k as u64);
-    for step in 0..k {
+    let bar = ProgressBar::new(args.steps as u64);
+    for step in 0..args.steps {
         if step == warmup {
             t0 = Instant::now();
         }
-        state = conway(state);
+        if args.unfold {
+            state = conway_unfold(state);
+        } else {
+            state = conway(state);
+        }
         bar.inc(1);
     }
     let t1: Instant = Instant::now();
     bar.finish();
 
-    let step_rate = (k - warmup) as f64 / (t1 - t0).as_secs_f64();
+    let step_rate = (args.steps - warmup) as f64 / (t1 - t0).as_secs_f64();
     println!("{:.2} steps/sec", step_rate);
+}
+
+fn conway_unfold<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
+    let [h, w] = state.shape().dims();
+
+    let h_blocks: Tensor<B, 3, Bool> = state.clone().unfold(0, 3, 1);
+    assert_shape_contract_periodically!(
+        ["h_wins" = "height" - "pad", "width", "kernel"],
+        &h_blocks.shape().dims,
+        &[("height", h), ("width", w), ("kernel", 3), ("pad", 2)]
+    );
+
+    let blocks: Tensor<B, 4, Bool> = h_blocks.unfold(1, 3, 1);
+    assert_shape_contract_periodically!(
+        [
+            "h_wins" = "height" - "pad",
+            "w_wins" = "width" - "pad",
+            "kernel",
+            "kernel"
+        ],
+        &blocks.shape().dims,
+        &[("height", h), ("width", w), ("kernel", 3), ("pad", 2)]
+    );
+
+    let blocks: Tensor<B, 3, Int> = blocks
+        .reshape([h - 2, w - 2, 3 * 3])
+        .permute([2, 0, 1])
+        .int();
+
+    let block_sum = blocks.clone().sum_dim(0);
+    let neighbor_count = block_sum - blocks.slice(s![5, .., ..]);
+
+    let neighbor_count = neighbor_count.reshape([h - 2, w - 2]);
+
+    conway_transition(state, neighbor_count)
 }
 
 fn conway<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
@@ -61,14 +116,31 @@ fn conway<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
             stride: [1, 1],
             padding: [0, 0],
             dilation: [1, 1],
-        }
-    ).int();
+        },
+    )
+    .int()
+    .squeeze::<2>(0);
 
-    let block_sum = blocks.clone().sum_dim(1);
-    let neighbor_count = block_sum - blocks.slice(s![0, 5, ..]);
+    assert_shape_contract_periodically!(
+        [
+            "kernel" ^ 2,
+            "blocks" = ("height" - "pad") * ("width" - "pad")
+        ],
+        &blocks.shape().dims,
+        &[("kernel", 3), ("height", h), ("width", w), ("pad", 2),],
+    );
 
-    let neighbor_count = neighbor_count.reshape([h-2, w-2]);
+    let block_sum = blocks.clone().sum_dim(0);
+    let neighbor_count = block_sum - blocks.slice(s![5, ..]);
+    let neighbor_count = neighbor_count.reshape([h - 2, w - 2]);
 
+    conway_transition(state, neighbor_count)
+}
+
+fn conway_transition<B: Backend>(
+    state: Tensor<B, 2, Bool>,
+    neighbor_count: Tensor<B, 2, Int>,
+) -> Tensor<B, 2, Bool> {
     let inner = state.clone().slice(s![1..-1, 1..-1]);
 
     let survivors = inner.bool_and(neighbor_count.clone().equal_elem(2));

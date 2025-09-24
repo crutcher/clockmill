@@ -24,11 +24,15 @@ pub struct Args {
 
     /// Use `Tensor::unfold()` views.
     #[arg(long, default_value = "false")]
-    pub unfold: bool,
+    pub unfold_views: bool,
 
     /// The fraction of steps to use for warmup.
     #[arg(long, default_value_t = 10)]
     pub warmup_fraction: usize,
+
+    /// Show progress bar.
+    #[arg(short, long, default_value_t = false)]
+    pub progress: bool,
 }
 
 fn main() {
@@ -52,26 +56,36 @@ fn run<B: Backend>(args: &Args) {
     .greater_elem(0.5);
 
     let mut t0: Instant = Instant::now();
-    let bar = ProgressBar::new(args.steps as u64);
+    let bar = if args.progress {
+        Some(ProgressBar::new(args.steps as u64))
+    } else {
+        None
+    };
+
     for step in 0..args.steps {
         if step == warmup {
             t0 = Instant::now();
         }
-        if args.unfold {
-            state = conway_unfold(state);
+        if args.unfold_views {
+            state = conway_unfold_views(state);
         } else {
-            state = conway(state);
+            state = conway_unfold_copies(state);
         }
-        bar.inc(1);
+
+        if let Some(bar) = &bar {
+            bar.inc(1);
+        }
     }
     let t1: Instant = Instant::now();
-    bar.finish();
+    if let Some(bar) = &bar {
+        bar.finish();
+    }
 
     let step_rate = (args.steps - warmup) as f64 / (t1 - t0).as_secs_f64();
     println!("{:.2} steps/sec", step_rate);
 }
 
-fn conway_unfold<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
+fn conway_unfold_views<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
     let [h, w] = state.shape().dims();
 
     let h_blocks: Tensor<B, 3, Bool> = state.clone().unfold(0, 3, 1);
@@ -106,7 +120,7 @@ fn conway_unfold<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
     conway_transition(state, neighbor_count)
 }
 
-fn conway<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
+fn conway_unfold_copies<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
     let [h, w] = state.shape().dims();
 
     let blocks = unfold4d(

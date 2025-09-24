@@ -34,4 +34,8 @@ indicatif = "0.18.0"
 
 clap = "^4.5.47"
 
-
+piston = "1.0.0"
+piston2d-graphics = "0.45.0"
+pistoncore-glutin_window = "0.72.0"
+piston2d-opengl_graphics = "0.89.0"
+gl = "0.14.0"

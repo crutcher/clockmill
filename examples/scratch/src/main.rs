@@ -15,11 +15,11 @@ use std::time::Instant;
 #[command(long_about = None)]
 pub struct Args {
     /// The number of steps to run.
-    #[arg(long, default_value = "10000")]
+    #[arg(long, default_value = "1000")]
     pub steps: usize,
 
     /// The width and height of the grid.
-    #[arg(long, default_value = "1000")]
+    #[arg(long, default_value = "100")]
     pub grid_size: usize,
 
     /// Use `Tensor::unfold()` views.

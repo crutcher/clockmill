@@ -1,0 +1,22 @@
+[package]
+name = "fishbowl"
+edition.workspace = true
+version.workspace = true
+repository.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+burn = { workspace = true, features = ["fusion", "autotune", "cuda"] }
+clap = { workspace = true, features = ["derive"] }
+
+bimm-contracts = { workspace = true, features = ["burn"] }
+
+piston = { workspace = true}
+piston2d-graphics = { workspace = true}
+pistoncore-glutin_window = { workspace = true}
+piston2d-opengl_graphics = { workspace = true}
+gl = {workspace = true}
+
+[lints]
+workspace = true

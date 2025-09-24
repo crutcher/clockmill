@@ -6,12 +6,13 @@ use burn::tensor::DType::F16;
 use burn::tensor::module::unfold4d;
 use burn::tensor::ops::UnfoldOptions;
 use clap::Parser;
+use indicatif::ProgressBar;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 pub struct Args {
     /// The number of steps to run.
-    #[arg(long, default_value = "100")]
+    #[arg(long, default_value = "1000")]
     pub steps: usize,
 
     /// The width and height of the grid.
@@ -35,13 +36,16 @@ fn run<B: Backend>(args: &Args) {
     let mut state: Tensor::<B, 2, Bool> = Tensor::<B, 2>::random([n, n], Distribution::Default, &device).greater_elem(0.5);
 
     let mut t0: Instant = Instant::now();
+    let bar = ProgressBar::new(k as u64);
     for step in 0..k {
         if step == warmup {
             t0 = Instant::now();
         }
         state = conway(state);
+        bar.inc(1);
     }
     let t1: Instant = Instant::now();
+    bar.finish();
 
     let step_rate = (k - warmup) as f64 / (t1 - t0).as_secs_f64();
     println!("{:.2} steps/sec", step_rate);

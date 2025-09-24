@@ -27,8 +27,7 @@ const RED: [f32; 4] = [1.0, 0.0, 0.0, 1.0];
 pub struct App<B: Backend> {
     gl: GlGraphics, // OpenGL drawing backend.
     state: Tensor<B, 2, Bool>,
-    zoom: f64,
-    noise: f64,
+    update_noise: f64,
 }
 
 impl<B: Backend> App<B> {
@@ -44,6 +43,10 @@ impl<B: Backend> App<B> {
         let data = data.to_data();
         let data: &[u8] = data.as_slice().unwrap();
 
+        let [win_w, win_h] = args.viewport().draw_size;
+
+        let draw_scale = (win_w as f64)/(w as f64);
+
         self.gl.draw(args.viewport(), |c, gl| {
             for w_idx in 0..w {
                 for h_idx in 0..h {
@@ -51,15 +54,16 @@ impl<B: Backend> App<B> {
 
                     let color = if cell == 1 { BLACK } else { WHITE };
 
+                    let pos = [0., 0., draw_scale, draw_scale];
+
+                    let transform = c.transform.trans(
+                        w_idx as f64 * draw_scale,
+                        h_idx as f64 * draw_scale);
+
                     Rectangle::new(color).draw(
-                        [
-                            w_idx as f64 * self.zoom,
-                            h_idx as f64 * self.zoom,
-                            self.zoom * 2.,
-                            self.zoom,
-                        ],
+                        pos,
                         &c.draw_state,
-                        c.transform,
+                        transform,
                         gl,
                     );
                 }
@@ -73,10 +77,10 @@ impl<B: Backend> App<B> {
     ) {
         self.state = conway(self.state.clone());
 
-        if self.noise > 0.0 {
+        if self.update_noise > 0.0 {
             let noise = Tensor::<B, 2>::random(
                 self.state.shape(),
-                Distribution::Bernoulli(0.01),
+                Distribution::Bernoulli(self.update_noise),
                 &self.state.device(),
             )
             .equal_elem(1.0);
@@ -91,7 +95,7 @@ impl<B: Backend> App<B> {
 #[command(long_about = None)]
 pub struct Args {
     /// The width and height of the grid.
-    #[arg(long, default_value = "100")]
+    #[arg(long, default_value_t = 200)]
     pub grid_size: usize,
 
     /// The initial density of the grid.
@@ -99,8 +103,16 @@ pub struct Args {
     pub initial_density: f64,
 
     /// The noise to apply to the grid.
-    #[arg(long, default_value_t = 0.0)]
-    pub noise: f64,
+    #[arg(long, default_value_t = 1e-4)]
+    pub update_noise: f64,
+
+    /// The number of steps to target per second.
+    #[arg(long, default_value_t = 20)]
+    pub fps: u64,
+
+    /// The initial window zoom.
+    #[arg(long, default_value_t = 2.5)]
+    pub zoom: f64,
 }
 
 fn main() {
@@ -112,7 +124,6 @@ fn main() {
 fn run<B: Backend>(args: &Args) {
     println!("Args: {:?}", args);
 
-    let zoom = 4.0;
     let device = Default::default();
 
     let mut state: Tensor<B, 2, Bool> = Tensor::<B, 2>::random(
@@ -126,7 +137,7 @@ fn run<B: Backend>(args: &Args) {
     let opengl = OpenGL::V3_2;
 
     // Create a Glutin window.
-    let gs = (args.grid_size as f64 * zoom) as u32;
+    let gs =  (args.grid_size as f64 * args.zoom) as u32;
     let mut window: Window = WindowSettings::new("life", [gs, gs])
         .graphics_api(opengl)
         .exit_on_esc(true)
@@ -140,12 +151,12 @@ fn run<B: Backend>(args: &Args) {
     let mut app = App {
         gl: GlGraphics::new(opengl),
         state: state,
-        zoom: 2.0,
-        noise: args.noise,
+        update_noise: args.update_noise,
     };
 
     let mut events = Events::new(EventSettings::new());
-    events.set_ups(1);
+    events.set_ups(args.fps);
+
     while let Some(e) = events.next(&mut window) {
         if let Some(args) = e.render_args() {
             app.render(&args);

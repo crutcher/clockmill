@@ -7,7 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-burn = { workspace = true }
+burn = { workspace = true, features = ["fusion", "autotune", "cuda"] }
 clap = { workspace = true, features = ["derive"] }
 
 [lints]

@@ -1,5 +1,7 @@
 //! # Conway's Game of Life
 
+use crate::convolve::surface::convolve_func_2d;
+use bimm_contracts::{assert_shape_contract_periodically, unpack_shape_contract};
 use burn::Tensor;
 use burn::config::Config;
 use burn::prelude::{Backend, Bool, Int, RangesArg, ToElement, s};
@@ -192,6 +194,13 @@ fn neighborhood_count<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Int
 }
 
 fn next_inner<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
+    // FIXME: This pays a ~25% performance penalty versus next_inner_old().
+    // Is it the extra batch / channel dimensions?
+    next_inner_new(state)
+}
+
+#[allow(unused)]
+fn next_inner_old<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
     let count: Tensor<B, 2, Int> = neighborhood_count(state.clone());
 
     let live: Tensor<B, 2, Bool> = state.clone().slice(s![1..-1, 1..-1]);
@@ -199,6 +208,92 @@ fn next_inner<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
     let threes = count.clone().equal_elem(3);
     let fours = count.equal_elem(4);
     let update = threes.bool_or(fours.bool_and(live));
+
+    state.slice_assign(s![1..-1, 1..-1], update)
+}
+
+#[allow(unused)]
+fn next_inner_new<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
+    fn f<B: Backend>(blocks: Tensor<B, 5, Bool>) -> Tensor<B, 3, Bool> {
+        #[cfg(debug_assertions)]
+        let [batch, num_blocks] = unpack_shape_contract!(
+            ["batch", "blocks", "c_in", "k", "k"],
+            &blocks.shape().dims,
+            &["batch", "blocks"],
+            &[("c_in", 1), ("k", 3)],
+        );
+
+        // [batch, h_wins * w_wins, 1, kernel[0], kernel[1]]
+        let blocks = blocks.squeeze::<4>(2);
+        // [batch, h_wins * w_wins, kernel[0], kernel[1]]
+
+        #[cfg(debug_assertions)]
+        assert_shape_contract_periodically!(
+            ["batch", "blocks", "k", "k"],
+            &blocks.shape().dims,
+            &[("batch", batch), ("blocks", num_blocks), ("k", 3)],
+        );
+
+        let live = blocks
+            .clone()
+            .slice(s![.., .., 1, 1])
+            .squeeze_dims::<2>(&[-1, -2]);
+        // [batch, h_wins * w_wins]
+
+        #[cfg(debug_assertions)]
+        assert_shape_contract_periodically!(
+            ["batch", "blocks"],
+            &live.shape().dims,
+            &[("batch", batch), ("blocks", num_blocks)],
+        );
+
+        let count = blocks
+            .int()
+            .sum_dim(2)
+            .sum_dim(3)
+            .squeeze_dims::<2>(&[-1, -2]);
+        // [batch, h_wins * w_wins]
+
+        #[cfg(debug_assertions)]
+        assert_shape_contract_periodically!(
+            ["batch", "blocks"],
+            &count.shape().dims,
+            &[("batch", batch), ("blocks", num_blocks)],
+        );
+
+        let threes = count.clone().equal_elem(3);
+        let fours = count.equal_elem(4);
+
+        let update = threes.bool_or(fours.bool_and(live));
+
+        #[cfg(debug_assertions)]
+        assert_shape_contract_periodically!(
+            ["batch", "blocks"],
+            &update.shape().dims,
+            &[("batch", batch), ("blocks", num_blocks)],
+        );
+
+        update.unsqueeze_dim::<3>(2)
+    }
+
+    let [height, width] = unpack_shape_contract!(["height", "width"], &state.shape().dims);
+
+    let batch_state = state.clone().unsqueeze_dims::<4>(&[0, 0]);
+
+    let conv_out = convolve_func_2d(batch_state, [3, 3], f);
+
+    assert_shape_contract_periodically!(
+        ["batch", "c_out", "h_wins", "w_wins"],
+        &conv_out.shape().dims,
+        &[
+            ("batch", 1),
+            ("c_out", 1),
+            ("h_wins", height - 2),
+            ("w_wins", width - 2)
+        ],
+    );
+
+    let update = conv_out.squeeze_dims::<2>(&[0, 1]);
 
     state.slice_assign(s![1..-1, 1..-1], update)
 }

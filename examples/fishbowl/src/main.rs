@@ -17,7 +17,6 @@ use piston::event_loop::{EventSettings, Events};
 use piston::input::{RenderArgs, RenderEvent, UpdateArgs, UpdateEvent};
 use piston::window::WindowSettings;
 use piston::{EventLoop, OpenGLWindow};
-use std::env::args;
 use std::time::Instant;
 
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
@@ -47,11 +46,10 @@ impl<B: Backend> App<B> {
         let draw_scale = (win_w as f64) / (w as f64);
 
         self.gl.draw(args.viewport(), |c, gl| {
-            for w_idx in 0..w {
-                for h_idx in 0..h {
-                    let cell = data[h_idx][w_idx];
+            for (w_idx, col) in data.iter().enumerate() {
+                for (h_idx, cell) in col.iter().enumerate() {
 
-                    let color = if cell { BLACK } else { WHITE };
+                    let color = if *cell { BLACK } else { WHITE };
 
                     let pos = [0., 0., draw_scale, draw_scale];
 

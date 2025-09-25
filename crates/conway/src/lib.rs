@@ -37,6 +37,10 @@ impl<B: Backend> Conway<B> {
         &mut self,
         density: f64,
     ) {
+        if density == 0.0 {
+            return;
+        }
+
         let noise: Tensor<B, 2, Bool> = Tensor::<B, 2>::random(
             self.shape(),
             Distribution::Bernoulli(density),
@@ -51,6 +55,10 @@ impl<B: Backend> Conway<B> {
         &mut self,
         density: f64,
     ) {
+        if density == 0.0 {
+            return;
+        }
+
         let [h, w] = self.shape();
 
         let mut state = self.state.clone();
@@ -157,7 +165,7 @@ impl<B: Backend> Conway<B> {
     pub fn write_slice<R>(
         &mut self,
         ranges: R,
-        data: &Vec<Vec<bool>>,
+        data: Vec<Vec<bool>>,
     ) where
         R: RangesArg<2>,
     {
@@ -208,9 +216,9 @@ mod tests {
             vec![vec![false, false], vec![false, false]]
         );
 
-        conway.write_slice(s![1..3, 1..3], &vec![vec![true, true], vec![true, false]]);
+        conway.write_slice(s![1..3, 1..3], vec![vec![true, true], vec![true, false]]);
 
-        conway.write_slice(s![-2.., -2..], &vec![vec![false, true], vec![true, true]]);
+        conway.write_slice(s![-2.., -2..], vec![vec![false, true], vec![true, true]]);
 
         assert_eq!(
             conway.read_slice(s![1..3, 1..3]),

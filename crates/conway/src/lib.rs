@@ -72,74 +72,7 @@ impl<B: Backend> Conway<B> {
 
     pub fn step(&mut self) {
         self.previous = Some(self.state.clone());
-        self.state = Self::next_inner(self.state.clone());
-    }
-
-    pub fn neighbor_count(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Int> {
-        state
-            .unfold::<3, usize>(0, 3, 1)
-            .unfold::<4, usize>(1, 3, 1)
-            .int()
-            .sum_dim(2)
-            .sum_dim(3)
-            .squeeze_dims::<2>(&[2, 3])
-    }
-
-    pub fn next_inner(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
-        let neighbor_count: Tensor<B, 2, Int> = Self::neighbor_count(state.clone());
-
-        let live: Tensor<B, 2, Bool> = state.clone().slice(s![1..-1, 1..-1]);
-
-        let neighbor_count = neighbor_count - live.clone().int();
-
-        let survivors = live.clone().bool_and(
-            neighbor_count
-                .clone()
-                .equal_elem(2)
-                .bool_or(neighbor_count.clone().equal_elem(3)),
-        );
-
-        let spawners = live.bool_not().bool_and(neighbor_count.equal_elem(3));
-
-        let update = survivors.bool_or(spawners);
-
-        state.slice_assign(s![1..-1, 1..-1], update)
-    }
-
-    fn slice_size(slice: &Slice) -> usize {
-        (slice.end.unwrap() - slice.start) as usize
-    }
-
-    fn slices_shape(slices: &[Slice; 2]) -> [usize; 2] {
-        [Self::slice_size(&slices[0]), Self::slice_size(&slices[1])]
-    }
-
-    pub fn read_2d_slice<R>(
-        state: Tensor<B, 2, Bool>,
-        ranges: R,
-    ) -> Vec<Vec<bool>>
-    where
-        R: RangesArg<2>,
-    {
-        let slices = ranges.into_slices(state.shape());
-        let [h, w] = Self::slices_shape(&slices);
-
-        let block_data = state.clone().slice(slices).to_data();
-        let block_slice = block_data.as_slice::<B::BoolElem>().unwrap();
-
-        let mut result = Vec::with_capacity(h);
-        for hidx in 0..h {
-            let start = hidx * w;
-
-            result.push(
-                block_slice[start..start + w]
-                    .iter()
-                    .map(|&cell| cell.to_bool())
-                    .collect(),
-            )
-        }
-
-        result
+        self.state = next_inner(self.state.clone());
     }
 
     pub fn read_previous_slice<R>(
@@ -151,7 +84,7 @@ impl<B: Backend> Conway<B> {
     {
         self.previous
             .as_ref()
-            .map(|previous| Self::read_2d_slice(previous.clone(), ranges))
+            .map(|previous| read_2d_slice(previous.clone(), ranges))
     }
 
     pub fn read_slice<R>(
@@ -161,7 +94,7 @@ impl<B: Backend> Conway<B> {
     where
         R: RangesArg<2>,
     {
-        Self::read_2d_slice(self.state.clone(), ranges)
+        read_2d_slice(self.state.clone(), ranges)
     }
 
     pub fn write_slice<R>(
@@ -172,7 +105,7 @@ impl<B: Backend> Conway<B> {
         R: RangesArg<2>,
     {
         let slices = ranges.into_slices(self.state.shape());
-        let [h, w] = Self::slices_shape(&slices);
+        let [h, w] = slices_shape(&slices);
 
         assert_eq!(data.len(), h);
         for row in data.iter() {
@@ -191,6 +124,64 @@ impl<B: Backend> Conway<B> {
 
         self.state = self.state.clone().slice_assign(slices, data);
     }
+}
+
+fn slice_size(slice: &Slice) -> usize {
+    (slice.end.unwrap() - slice.start) as usize
+}
+
+fn slices_shape(slices: &[Slice; 2]) -> [usize; 2] {
+    [slice_size(&slices[0]), slice_size(&slices[1])]
+}
+
+pub fn read_2d_slice<B: Backend, R>(
+    state: Tensor<B, 2, Bool>,
+    ranges: R,
+) -> Vec<Vec<bool>>
+where
+    R: RangesArg<2>,
+{
+    let slices = ranges.into_slices(state.shape());
+    let [h, w] = slices_shape(&slices);
+
+    let block_data = state.clone().slice(slices).to_data();
+    let block_slice = block_data.as_slice::<B::BoolElem>().unwrap();
+
+    let mut result = Vec::with_capacity(h);
+    for hidx in 0..h {
+        let start = hidx * w;
+
+        result.push(
+            block_slice[start..start + w]
+                .iter()
+                .map(|&cell| cell.to_bool())
+                .collect(),
+        )
+    }
+
+    result
+}
+
+pub fn neighborhood_count<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Int> {
+    state
+        .unfold::<3, usize>(0, 3, 1)
+        .unfold::<4, usize>(1, 3, 1)
+        .int()
+        .sum_dim(2)
+        .sum_dim(3)
+        .squeeze_dims::<2>(&[2, 3])
+}
+
+pub fn next_inner<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
+    let count: Tensor<B, 2, Int> = neighborhood_count(state.clone());
+
+    let live: Tensor<B, 2, Bool> = state.clone().slice(s![1..-1, 1..-1]);
+
+    let threes = count.clone().equal_elem(3);
+    let fours = count.equal_elem(4);
+    let update = threes.bool_or(fours.bool_and(live));
+
+    state.slice_assign(s![1..-1, 1..-1], update)
 }
 
 #[cfg(test)]
@@ -227,21 +218,19 @@ mod tests {
             vec![vec![true, true], vec![true, false]]
         );
 
-        Conway::neighbor_count(conway.state.clone())
+        neighborhood_count(conway.state.clone())
             .to_data()
             .assert_eq(&TensorData::from([[3, 3, 1], [3, 3, 2], [1, 2, 3]]), false);
 
-        Conway::next_inner(conway.state.clone())
-            .to_data()
-            .assert_eq(
-                &TensorData::from([
-                    [false, false, false, false, false],
-                    [false, true, true, false, false],
-                    [false, true, true, false, false],
-                    [false, false, false, true, true],
-                    [false, false, false, true, true],
-                ]),
-                false,
-            )
+        next_inner(conway.state.clone()).to_data().assert_eq(
+            &TensorData::from([
+                [false, false, false, false, false],
+                [false, true, true, false, false],
+                [false, true, true, false, false],
+                [false, false, false, true, true],
+                [false, false, false, true, true],
+            ]),
+            false,
+        )
     }
 }

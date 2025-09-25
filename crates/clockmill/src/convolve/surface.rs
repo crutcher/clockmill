@@ -12,8 +12,8 @@ use burn::tensor::ops::unfold::calculate_unfold_windows;
 ///
 /// * `input` - a ``[batch, c_in, height, width]`` tensor.
 /// * `kernel` - a kernel shape, e.g. ``[3, 3]``.
-/// * `func` - a func from ``[batch, h_wins * w_wins, c_in, kernel[0], kernel[1]]``
-///   to ``[batch, blocks, c_out]``
+/// * `func` - a func from ``[batch, h_wins, w_wins, c_in, kernel[0], kernel[1]]``
+///   to ``[batch, h_wins, w_wins, c_out]``
 ///
 /// # Returns
 ///
@@ -27,10 +27,10 @@ where
     B: Backend,
     KIn: BasicOps<B>,
     KOut: BasicOps<B>,
-    F: Fn(Tensor<B, 5, KIn>) -> Tensor<B, 3, KOut>,
+    F: Fn(Tensor<B, 6, KIn>) -> Tensor<B, 4, KOut>,
 {
     let [batch, c_in, height, width] =
-        unpack_shape_contract!(["batch", "c_in", "height", "width"], &input.shape().dims,);
+        unpack_shape_contract!(["batch", "c_in", "height", "width"], &input.shape().dims);
 
     let h_wins = calculate_unfold_windows(height, kernel[0], 1);
     let w_wins = calculate_unfold_windows(width, kernel[1], 1);
@@ -52,13 +52,10 @@ where
         ]
     );
 
-    let x: Tensor<B, 5, KIn> = x
-        .reshape([batch, c_in, h_wins * w_wins, kernel[0], kernel[1]])
-        .swap_dims(1, 2);
-    // [batch, h_wins * w_wins, c_in, kernel[0], kernel[1]]
+    let x: Tensor<B, 6, KIn> = x.permute([0, 2, 3, 1, 4, 5]);
 
     assert_shape_contract_periodically!(
-        ["batch", "h_wins" * "w_wins", "c_in", "kernel0", "kernel1"],
+        ["batch", "h_wins", "w_wins", "c_in", "kernel0", "kernel1"],
         &x.shape().dims,
         &[
             ("batch", batch),
@@ -71,14 +68,12 @@ where
     );
 
     let x = (func)(x);
-    // [batch, h_wins * w_wins, c_out]
 
     assert_shape_contract_periodically!(
-        ["batch", "h_wins" * "w_wins", "c_out"],
+        ["batch", "h_wins", "w_wins", "c_out"],
         &x.shape().dims,
         &[("batch", batch), ("h_wins", h_wins), ("w_wins", w_wins),]
     );
 
-    let c_out = x.shape().dims[2];
-    x.swap_dims(1, 2).reshape([batch, c_out, h_wins, w_wins])
+    x.permute([0, 3, 1, 2])
 }

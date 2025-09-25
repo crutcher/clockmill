@@ -1,7 +1,6 @@
 //! # Conway's Game of Life
 
 use crate::convolve::surface::convolve_func_2d;
-use bimm_contracts::{assert_shape_contract_periodically, unpack_shape_contract};
 use burn::Tensor;
 use burn::config::Config;
 use burn::prelude::{Backend, Bool, Int, RangesArg, ToElement, s};
@@ -183,82 +182,51 @@ where
     result
 }
 
-fn neighborhood_count<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Int> {
-    state
-        .unfold::<3, usize>(0, 3, 1)
-        .unfold::<4, usize>(1, 3, 1)
-        .int()
-        .sum_dim(2)
-        .sum_dim(3)
-        .squeeze_dims::<2>(&[2, 3])
-}
-
 fn next_inner<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
-    // FIXME: This pays a ~25% performance penalty versus next_inner_old().
-    // Is it the extra batch / channel dimensions?
-    next_inner_new(state)
-}
-
-#[allow(unused)]
-fn next_inner_old<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
-    let count: Tensor<B, 2, Int> = neighborhood_count(state.clone());
-
-    let live: Tensor<B, 2, Bool> = state.clone().slice(s![1..-1, 1..-1]);
-
-    let threes = count.clone().equal_elem(3);
-    let fours = count.equal_elem(4);
-    let update = threes.bool_or(fours.bool_and(live));
-
-    state.slice_assign(s![1..-1, 1..-1], update)
-}
-
-#[allow(unused)]
-fn next_inner_new<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
-    fn f<B: Backend>(blocks: Tensor<B, 5, Bool>) -> Tensor<B, 3, Bool> {
+    fn f<B: Backend>(blocks: Tensor<B, 6, Bool>) -> Tensor<B, 4, Bool> {
         #[cfg(debug_assertions)]
-        let [batch, num_blocks] = unpack_shape_contract!(
-            ["batch", "blocks", "c_in", "k", "k"],
+        let [batch, h_win, w_win] = bimm_contracts::unpack_shape_contract!(
+            ["batch", "h_win", "w_win", "c_in", "k", "k"],
             &blocks.shape().dims,
-            &["batch", "blocks"],
+            &["batch", "h_win", "w_win"],
             &[("c_in", 1), ("k", 3)],
         );
 
-        // [batch, h_wins * w_wins, 1, kernel[0], kernel[1]]
-        let blocks = blocks.squeeze::<4>(2);
-        // [batch, h_wins * w_wins, kernel[0], kernel[1]]
-
+        let blocks: Tensor<B, 5, Bool> = blocks.squeeze::<5>(3);
         #[cfg(debug_assertions)]
-        assert_shape_contract_periodically!(
-            ["batch", "blocks", "k", "k"],
+        bimm_contracts::assert_shape_contract_periodically!(
+            ["batch", "h_win", "w_win", "k", "k"],
             &blocks.shape().dims,
-            &[("batch", batch), ("blocks", num_blocks), ("k", 3)],
+            &[
+                ("batch", batch),
+                ("h_win", h_win),
+                ("w_win", w_win),
+                ("k", 3)
+            ],
         );
 
-        let live = blocks
+        let live: Tensor<B, 3, Bool> = blocks
             .clone()
-            .slice(s![.., .., 1, 1])
-            .squeeze_dims::<2>(&[-1, -2]);
-        // [batch, h_wins * w_wins]
-
+            .slice(s![.., .., .., 1, 1])
+            .squeeze_dims::<3>(&[-1, -2]);
         #[cfg(debug_assertions)]
-        assert_shape_contract_periodically!(
-            ["batch", "blocks"],
+        bimm_contracts::assert_shape_contract_periodically!(
+            ["batch", "h_win", "w_win"],
             &live.shape().dims,
-            &[("batch", batch), ("blocks", num_blocks)],
+            &[("batch", batch), ("h_win", h_win), ("w_win", w_win)],
         );
 
-        let count = blocks
+        let count: Tensor<B, 3, Int> = blocks
             .int()
-            .sum_dim(2)
             .sum_dim(3)
-            .squeeze_dims::<2>(&[-1, -2]);
-        // [batch, h_wins * w_wins]
+            .sum_dim(4)
+            .squeeze_dims::<3>(&[-1, -2]);
 
         #[cfg(debug_assertions)]
-        assert_shape_contract_periodically!(
-            ["batch", "blocks"],
+        bimm_contracts::assert_shape_contract_periodically!(
+            ["batch", "h_win", "w_win"],
             &count.shape().dims,
-            &[("batch", batch), ("blocks", num_blocks)],
+            &[("batch", batch), ("h_win", h_win), ("w_win", w_win)],
         );
 
         let threes = count.clone().equal_elem(3);
@@ -267,22 +235,25 @@ fn next_inner_new<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
         let update = threes.bool_or(fours.bool_and(live));
 
         #[cfg(debug_assertions)]
-        assert_shape_contract_periodically!(
-            ["batch", "blocks"],
+        bimm_contracts::assert_shape_contract_periodically!(
+            ["batch", "h_win", "w_win"],
             &update.shape().dims,
-            &[("batch", batch), ("blocks", num_blocks)],
+            &[("batch", batch), ("h_win", h_win), ("w_win", w_win)],
         );
 
-        update.unsqueeze_dim::<3>(2)
+        update.unsqueeze_dim::<4>(3)
     }
 
-    let [height, width] = unpack_shape_contract!(["height", "width"], &state.shape().dims);
+    #[cfg(debug_assertions)]
+    let [height, width] =
+        bimm_contracts::unpack_shape_contract!(["height", "width"], &state.shape().dims);
 
     let batch_state = state.clone().unsqueeze_dims::<4>(&[0, 0]);
 
     let conv_out = convolve_func_2d(batch_state, [3, 3], f);
 
-    assert_shape_contract_periodically!(
+    #[cfg(debug_assertions)]
+    bimm_contracts::assert_shape_contract_periodically!(
         ["batch", "c_out", "h_wins", "w_wins"],
         &conv_out.shape().dims,
         &[
@@ -300,9 +271,7 @@ fn next_inner_new<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
 
 #[cfg(test)]
 mod tests {
-    use crate::simulations::surface::conway::{
-        Conway, ConwayConfig, neighborhood_count, next_inner,
-    };
+    use crate::simulations::surface::conway::{Conway, ConwayConfig, next_inner};
     use burn::backend::Wgpu;
     use burn::prelude::s;
     use burn::tensor::TensorData;
@@ -333,10 +302,6 @@ mod tests {
             conway.read_slice(s![1..3, 1..3]),
             vec![vec![true, true], vec![true, false]]
         );
-
-        neighborhood_count(conway.state.clone())
-            .to_data()
-            .assert_eq(&TensorData::from([[3, 3, 1], [3, 3, 2], [1, 2, 3]]), false);
 
         next_inner(conway.state.clone()).to_data().assert_eq(
             &TensorData::from([

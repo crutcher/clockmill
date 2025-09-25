@@ -1,6 +1,6 @@
 use burn::prelude::Backend;
 use clap::Parser;
-use conway::{Conway, ConwayConfig};
+use clockmill::simulations::surface::conway::{Conway, ConwayConfig};
 use indicatif::ProgressBar;
 use std::time::Instant;
 

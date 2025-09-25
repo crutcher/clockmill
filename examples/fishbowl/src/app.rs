@@ -1,6 +1,6 @@
 use crate::color::ColorScheme;
 use burn::prelude::Backend;
-use conway::Conway;
+use clockmill::simulations::surface::conway::Conway;
 use opengl_graphics::GlGraphics;
 use piston::{RenderArgs, UpdateArgs};
 

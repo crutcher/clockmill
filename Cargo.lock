@@ -1166,6 +1166,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b94f61472cee1439c0b966b47e3aca9ae07e45d070759512cd390ea2bebc6675"
 
 [[package]]
+name = "clockmill"
+version = "0.3.7"
+dependencies = [
+ "burn",
+]
+
+[[package]]
 name = "codespan-reporting"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1283,19 +1290,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "conway"
-version = "0.3.7"
-dependencies = [
- "burn",
-]
-
-[[package]]
 name = "conway_speedtest"
 version = "0.3.7"
 dependencies = [
  "burn",
  "clap",
- "conway",
+ "clockmill",
  "indicatif",
 ]
 
@@ -2341,7 +2341,7 @@ version = "0.3.7"
 dependencies = [
  "burn",
  "clap",
- "conway",
+ "clockmill",
  "gl 0.14.0",
  "piston",
  "piston2d-graphics",

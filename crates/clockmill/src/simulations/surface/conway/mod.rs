@@ -1,6 +1,9 @@
+//! # Conway's Game of Life
+
+use burn::Tensor;
 use burn::config::Config;
-use burn::prelude::{Backend, Bool, Int, Tensor, ToElement, s};
-use burn::tensor::{Distribution, RangesArg, Slice};
+use burn::prelude::{Backend, Bool, Int, RangesArg, ToElement, s};
+use burn::tensor::{Distribution, Slice};
 
 #[derive(Config, Debug)]
 pub struct ConwayConfig {
@@ -186,7 +189,9 @@ pub fn next_inner<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::simulations::surface::conway::{
+        Conway, ConwayConfig, neighborhood_count, next_inner,
+    };
     use burn::backend::Wgpu;
     use burn::prelude::s;
     use burn::tensor::TensorData;

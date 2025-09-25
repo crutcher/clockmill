@@ -8,7 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 burn = { workspace = true, features = ["fusion", "autotune", "wgpu"] }
-conway = { path = "../../crates/conway" }
+clockmill = { path = "../../crates/clockmill" }
 clap = { workspace = true, features = ["derive"] }
 indicatif = { workspace = true }
 

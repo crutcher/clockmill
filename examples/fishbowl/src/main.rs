@@ -1,8 +1,8 @@
 use app::FishbowlApp;
 use burn::prelude::Backend;
 use clap::Parser;
+use clockmill::simulations::surface::conway::{Conway, ConwayConfig};
 use color::ColorScheme;
-use conway::{Conway, ConwayConfig};
 use glutin_window::GlutinWindow as Window;
 use opengl_graphics::{GlGraphics, OpenGL};
 use piston::event_loop::{EventSettings, Events};

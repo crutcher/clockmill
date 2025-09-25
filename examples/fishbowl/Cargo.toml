@@ -7,11 +7,9 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-burn = { workspace = true, features = ["fusion", "autotune", "wgpu"] }
+burn = { workspace = true, features = ["fusion", "autotune"] }
 conway = { path = "../../crates/conway" }
 clap = { workspace = true, features = ["derive"] }
-
-bimm-contracts = { workspace = true, features = ["burn"] }
 
 piston = { workspace = true}
 piston2d-graphics = { workspace = true}
@@ -21,3 +19,7 @@ gl = {workspace = true}
 
 [lints]
 workspace = true
+
+[features]
+default = ["wgpu"]
+wgpu = ["burn/wgpu"]

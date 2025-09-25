@@ -47,6 +47,7 @@ fn main() {
     let args = Args::parse();
     println!("{:#?}", args);
 
+    #[cfg(feature = "wgpu")]
     run::<Wgpu>(&args);
 }
 

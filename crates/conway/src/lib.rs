@@ -16,12 +16,14 @@ impl ConwayConfig {
     ) -> Conway<B> {
         Conway {
             state: Tensor::<B, 2, Int>::zeros(self.shape, device).bool(),
+            previous: None,
         }
     }
 }
 
 pub struct Conway<B: Backend> {
     pub state: Tensor<B, 2, Bool>,
+    pub previous: Option<Tensor<B, 2, Bool>>,
 }
 
 impl<B: Backend> Conway<B> {
@@ -51,46 +53,25 @@ impl<B: Backend> Conway<B> {
         self.state = self.state.clone().bool_or(noise);
     }
 
-    pub fn fuzz_edges(
-        &mut self,
-        density: f64,
-    ) {
-        if density == 0.0 {
-            return;
-        }
-
-        let [h, w] = self.shape();
-
+    pub fn wrap(&mut self) {
         let mut state = self.state.clone();
-
-        state = state.clone().slice_assign(
-            s![0, ..],
-            Tensor::<B, 2>::random([1, w], Distribution::Bernoulli(density), &self.device())
-                .equal_elem(1.0),
-        );
-
-        state = state.clone().slice_assign(
-            s![-1, ..],
-            Tensor::<B, 2>::random([1, w], Distribution::Bernoulli(density), &self.device())
-                .equal_elem(1.0),
-        );
-
-        state = state.clone().slice_assign(
-            s![.., 0],
-            Tensor::<B, 2>::random([h, 1], Distribution::Bernoulli(density), &self.device())
-                .equal_elem(1.0),
-        );
-
-        state = state.clone().slice_assign(
-            s![.., -1],
-            Tensor::<B, 2>::random([h, 1], Distribution::Bernoulli(density), &self.device())
-                .equal_elem(1.0),
-        );
-
+        state = state
+            .clone()
+            .slice_assign(s![0, ..], state.clone().slice(s![-2, ..]));
+        state = state
+            .clone()
+            .slice_assign(s![-1, ..], state.clone().slice(s![1, ..]));
+        state = state
+            .clone()
+            .slice_assign(s![1..-1, 0], state.clone().slice(s![1..-1, -2]));
+        state = state
+            .clone()
+            .slice_assign(s![1..-1, -1], state.clone().slice(s![1..-1, 1]));
         self.state = state;
     }
 
     pub fn step(&mut self) {
+        self.previous = Some(self.state.clone());
         self.state = Self::next_inner(self.state.clone());
     }
 
@@ -133,17 +114,17 @@ impl<B: Backend> Conway<B> {
         [Self::slice_size(&slices[0]), Self::slice_size(&slices[1])]
     }
 
-    pub fn read_slice<R>(
-        &self,
+    pub fn read_2d_slice<R>(
+        state: Tensor<B, 2, Bool>,
         ranges: R,
     ) -> Vec<Vec<bool>>
     where
         R: RangesArg<2>,
     {
-        let slices = ranges.into_slices(self.state.shape());
+        let slices = ranges.into_slices(state.shape());
         let [h, w] = Self::slices_shape(&slices);
 
-        let block_data = self.state.clone().slice(slices).to_data();
+        let block_data = state.clone().slice(slices).to_data();
 
         let block_slice: &[u32] = block_data.as_slice().unwrap();
 
@@ -160,6 +141,28 @@ impl<B: Backend> Conway<B> {
         }
 
         result
+    }
+
+    pub fn read_previous_slice<R>(
+        &self,
+        ranges: R,
+    ) -> Option<Vec<Vec<bool>>>
+    where
+        R: RangesArg<2>,
+    {
+        self.previous
+            .as_ref()
+            .map(|previous| Self::read_2d_slice(previous.clone(), ranges))
+    }
+
+    pub fn read_slice<R>(
+        &self,
+        ranges: R,
+    ) -> Vec<Vec<bool>>
+    where
+        R: RangesArg<2>,
+    {
+        Self::read_2d_slice(self.state.clone(), ranges)
     }
 
     pub fn write_slice<R>(

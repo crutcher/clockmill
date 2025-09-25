@@ -1,5 +1,6 @@
 [package]
 name = "fishbowl"
+publish = false
 edition.workspace = true
 version.workspace = true
 repository.workspace = true

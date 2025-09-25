@@ -68,6 +68,6 @@ impl<B: Backend> FishbowlApp<B> {
     ) {
         self.conway.fuzz(self.update_noise);
         self.conway.wrap();
-        self.conway.step()
+        self.conway.step_no_wrap()
     }
 }

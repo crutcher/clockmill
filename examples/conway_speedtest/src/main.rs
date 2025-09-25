@@ -65,7 +65,7 @@ fn run<B: Backend>(args: &Args) {
         if step == warmup {
             t0 = Instant::now();
         }
-        conway.step();
+        conway.step_no_wrap();
 
         if let Some(bar) = &bar {
             bar.inc(1);

@@ -5,6 +5,7 @@ use burn::config::Config;
 use burn::prelude::{Backend, Bool, Int, RangesArg, ToElement, s};
 use burn::tensor::{Distribution, Slice};
 
+/// Config for [`Conway`]
 #[derive(Config, Debug)]
 pub struct ConwayConfig {
     /// The shape of the board.
@@ -24,20 +25,27 @@ impl ConwayConfig {
     }
 }
 
+/// State module for Conway's Game of Life.
 pub struct Conway<B: Backend> {
+    /// The current state of the board.
     pub state: Tensor<B, 2, Bool>,
+
+    /// The previous state of the board.
     pub previous: Option<Tensor<B, 2, Bool>>,
 }
 
 impl<B: Backend> Conway<B> {
+    /// Get the device the module is on.
     pub fn device(&self) -> B::Device {
         self.state.device()
     }
 
+    /// Get the board shape.
     pub fn shape(&self) -> [usize; 2] {
         self.state.shape().dims()
     }
 
+    /// Add uniform positive noise to the board.
     pub fn fuzz(
         &mut self,
         density: f64,
@@ -56,6 +64,10 @@ impl<B: Backend> Conway<B> {
         self.state = self.state.clone().bool_or(noise);
     }
 
+    /// Wrap the board state.
+    ///
+    /// This simulates a toroidal space by copying the penultimate rows and columns
+    /// to the edges of the opposite sides.
     pub fn wrap(&mut self) {
         let mut state = self.state.clone();
         state = state
@@ -73,11 +85,13 @@ impl<B: Backend> Conway<B> {
         self.state = state;
     }
 
-    pub fn step(&mut self) {
+    /// Advance the board state by one step; without applying wrapping.
+    pub fn step_no_wrap(&mut self) {
         self.previous = Some(self.state.clone());
         self.state = next_inner(self.state.clone());
     }
 
+    /// Read a slice of the previous board state.
     pub fn read_previous_slice<R>(
         &self,
         ranges: R,
@@ -90,6 +104,7 @@ impl<B: Backend> Conway<B> {
             .map(|previous| read_2d_slice(previous.clone(), ranges))
     }
 
+    /// Read a slice of the current board state.
     pub fn read_slice<R>(
         &self,
         ranges: R,
@@ -100,6 +115,7 @@ impl<B: Backend> Conway<B> {
         read_2d_slice(self.state.clone(), ranges)
     }
 
+    /// Write a slice to the current board state.
     pub fn write_slice<R>(
         &mut self,
         ranges: R,
@@ -137,7 +153,7 @@ fn slices_shape(slices: &[Slice; 2]) -> [usize; 2] {
     [slice_size(&slices[0]), slice_size(&slices[1])]
 }
 
-pub fn read_2d_slice<B: Backend, R>(
+fn read_2d_slice<B: Backend, R>(
     state: Tensor<B, 2, Bool>,
     ranges: R,
 ) -> Vec<Vec<bool>>
@@ -165,7 +181,7 @@ where
     result
 }
 
-pub fn neighborhood_count<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Int> {
+fn neighborhood_count<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Int> {
     state
         .unfold::<3, usize>(0, 3, 1)
         .unfold::<4, usize>(1, 3, 1)
@@ -175,7 +191,7 @@ pub fn neighborhood_count<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2,
         .squeeze_dims::<2>(&[2, 3])
 }
 
-pub fn next_inner<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
+fn next_inner<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
     let count: Tensor<B, 2, Int> = neighborhood_count(state.clone());
 
     let live: Tensor<B, 2, Bool> = state.clone().slice(s![1..-1, 1..-1]);

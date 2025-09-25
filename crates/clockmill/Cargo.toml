@@ -1,5 +1,7 @@
 [package]
 name = "clockmill"
+description = "Constant-Volume-Grid Simulations for Burn"
+documentation = "https://docs.rs/clockmill/latest"
 edition.workspace = true
 version.workspace = true
 repository.workspace = true

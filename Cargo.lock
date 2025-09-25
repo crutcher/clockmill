@@ -1167,7 +1167,7 @@ checksum = "b94f61472cee1439c0b966b47e3aca9ae07e45d070759512cd390ea2bebc6675"
 
 [[package]]
 name = "clockmill"
-version = "0.3.7"
+version = "0.0.1"
 dependencies = [
  "burn",
 ]
@@ -1291,7 +1291,7 @@ dependencies = [
 
 [[package]]
 name = "conway_speedtest"
-version = "0.3.7"
+version = "0.0.1"
 dependencies = [
  "burn",
  "clap",
@@ -2337,7 +2337,7 @@ checksum = "1ced73b1dacfc750a6db6c0a0c3a3853c8b41997e2e2c563dc90804ae6867959"
 
 [[package]]
 name = "fishbowl"
-version = "0.3.7"
+version = "0.0.1"
 dependencies = [
  "burn",
  "clap",

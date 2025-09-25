@@ -38,13 +38,12 @@ pub struct Args {
 
 fn main() {
     let args = Args::parse();
+    println!("{:#?}", args);
 
     run::<Wgpu>(&args);
 }
 
 fn run<B: Backend>(args: &Args) {
-    println!("Args: {:?}", args);
-
     let device = Default::default();
 
     let warmup = args.steps / args.warmup_fraction;

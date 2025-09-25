@@ -23,7 +23,7 @@ pub struct Args {
     pub grid_size: usize,
 
     /// The initial density of the grid.
-    #[arg(long, default_value_t = 0.2)]
+    #[arg(long, default_value_t = 0.1)]
     pub initial_density: f64,
 
     /// The noise to apply to the grid.

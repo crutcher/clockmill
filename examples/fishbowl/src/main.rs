@@ -143,7 +143,7 @@ pub struct Args {
     pub update_noise: f64,
 
     /// The number of steps to target per second.
-    #[arg(long, default_value_t = 10)]
+    #[arg(long, default_value_t = 30)]
     pub fps: u64,
 
     /// The initial window zoom.

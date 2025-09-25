@@ -250,7 +250,7 @@ fn next_inner<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
 
     let batch_state = state.clone().unsqueeze_dims::<4>(&[0, 0]);
 
-    let conv_out = convolve_func_2d(batch_state, [3, 3], f);
+    let conv_out = convolve_func_2d(batch_state, f, [3, 3], [1, 1]);
 
     #[cfg(debug_assertions)]
     bimm_contracts::assert_shape_contract_periodically!(

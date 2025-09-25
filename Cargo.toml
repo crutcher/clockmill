@@ -24,18 +24,18 @@ doc_markdown = "warn"
 
 
 [patch.crates-io]
-burn = { git = "https://github.com/tracel-ai/burn", rev = "6799d429b7307e7698109a2801acc4eccffb272c" }
+burn = { git = "https://github.com/tracel-ai/burn", rev = "0055b735d0f91e549ff9f56d14c2d6947e06ae4e" }
 
 [workspace.dependencies]
 burn = "^0.19.0"
 bimm-contracts = "^0.4.3"
 
-indicatif = "0.18.0"
+indicatif = "^0.18.0"
 
 clap = "^4.5.47"
 
-piston = "1.0.0"
-piston2d-graphics = "0.45.0"
-pistoncore-glutin_window = "0.72.0"
-piston2d-opengl_graphics = "0.89.0"
-gl = "0.14.0"
+piston = "^1.0.0"
+piston2d-graphics = "^0.45.0"
+pistoncore-glutin_window = "^0.72.0"
+piston2d-opengl_graphics = "^0.89.0"
+gl = "^0.14.0"

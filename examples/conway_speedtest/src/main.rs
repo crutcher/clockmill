@@ -20,7 +20,7 @@ pub struct Args {
     pub steps: usize,
 
     /// The width and height of the grid.
-    #[arg(long, default_value = "100")]
+    #[arg(long, default_value = "1000")]
     pub grid_size: usize,
 
     /// Use `Tensor::unfold()` views.

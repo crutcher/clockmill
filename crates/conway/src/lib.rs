@@ -1,5 +1,5 @@
 use burn::config::Config;
-use burn::prelude::{Backend, Bool, Int, Tensor, s};
+use burn::prelude::{Backend, Bool, Int, Tensor, ToElement, s};
 use burn::tensor::{Distribution, RangesArg, Slice};
 
 #[derive(Config, Debug)]
@@ -125,8 +125,7 @@ impl<B: Backend> Conway<B> {
         let [h, w] = Self::slices_shape(&slices);
 
         let block_data = state.clone().slice(slices).to_data();
-
-        let block_slice: &[u32] = block_data.as_slice().unwrap();
+        let block_slice = block_data.as_slice::<B::BoolElem>().unwrap();
 
         let mut result = Vec::with_capacity(h);
         for hidx in 0..h {
@@ -135,7 +134,7 @@ impl<B: Backend> Conway<B> {
             result.push(
                 block_slice[start..start + w]
                     .iter()
-                    .map(|&x| x != 0)
+                    .map(|&cell| cell.to_bool())
                     .collect(),
             )
         }

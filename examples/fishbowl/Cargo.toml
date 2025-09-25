@@ -22,4 +22,6 @@ workspace = true
 
 [features]
 default = ["wgpu"]
+cuda = ["burn/cuda"]
+metal = ["burn/metal"]
 wgpu = ["burn/wgpu"]

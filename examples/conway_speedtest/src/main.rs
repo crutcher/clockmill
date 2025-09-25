@@ -1,11 +1,4 @@
-#![allow(unused)]
-use bimm_contracts::{assert_shape_contract_periodically, unpack_shape_contract};
-use burn::backend::Wgpu;
-use burn::prelude::{Backend, Bool, Int, Tensor, s};
-use burn::tensor::DType::F16;
-use burn::tensor::Distribution;
-use burn::tensor::module::unfold4d;
-use burn::tensor::ops::UnfoldOptions;
+use burn::prelude::Backend;
 use clap::Parser;
 use conway::{Conway, ConwayConfig};
 use indicatif::ProgressBar;
@@ -40,7 +33,14 @@ fn main() {
     let args = Args::parse();
     println!("{:#?}", args);
 
-    run::<Wgpu>(&args);
+    #[cfg(feature = "cuda")]
+    run::<burn::backend::Cuda>(&args);
+
+    #[cfg(feature = "wgpu")]
+    run::<burn::backend::Wgpu>(&args);
+
+    #[cfg(feature = "metal")]
+    run::<burn::backend::Metal>(&args);
 }
 
 fn run<B: Backend>(args: &Args) {

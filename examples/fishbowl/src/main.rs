@@ -1,5 +1,4 @@
 use app::FishbowlApp;
-use burn::backend::Wgpu;
 use burn::prelude::Backend;
 use clap::Parser;
 use color::ColorScheme;
@@ -47,8 +46,14 @@ fn main() {
     let args = Args::parse();
     println!("{:#?}", args);
 
+    #[cfg(feature = "cuda")]
+    run::<burn::backend::Cuda>(&args);
+
     #[cfg(feature = "wgpu")]
-    run::<Wgpu>(&args);
+    run::<burn::backend::Wgpu>(&args);
+
+    #[cfg(feature = "metal")]
+    run::<burn::backend::Metal>(&args);
 }
 
 fn run<B: Backend>(args: &Args) {

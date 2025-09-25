@@ -1,13 +1,14 @@
 #![allow(unused)]
 
 use bimm_contracts::{assert_shape_contract_periodically, unpack_shape_contract};
-use burn::backend::{Wgpu};
+use burn::backend::Wgpu;
 use burn::prelude::{Backend, Bool, Int, Tensor, s};
 use burn::tensor::DType::F16;
 use burn::tensor::Distribution;
 use burn::tensor::module::unfold4d;
 use burn::tensor::ops::UnfoldOptions;
 use clap::Parser;
+use conway::{Conway, ConwayConfig};
 use glutin_window::GlutinWindow as Window;
 use graphics::Graphics;
 use opengl_graphics::{GlGraphics, OpenGL};
@@ -18,7 +19,6 @@ use piston::window::WindowSettings;
 use piston::{EventLoop, OpenGLWindow};
 use std::env::args;
 use std::time::Instant;
-use conway::{Conway, ConwayConfig};
 
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 const BLACK: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
@@ -29,6 +29,7 @@ pub struct App<B: Backend> {
     gl: GlGraphics, // OpenGL drawing backend.
     conway: Conway<B>,
     update_noise: f64,
+    edge_noise: f64,
 }
 
 impl<B: Backend> App<B> {
@@ -38,13 +39,12 @@ impl<B: Backend> App<B> {
     ) {
         use graphics::*;
 
-
         let [h, w] = self.conway.shape();
         let data = self.conway.read_slice(s![.., ..]);
 
         let [win_w, win_h] = args.viewport().draw_size;
 
-        let draw_scale = (win_w as f64)/(w as f64);
+        let draw_scale = (win_w as f64) / (w as f64);
 
         self.gl.draw(args.viewport(), |c, gl| {
             for w_idx in 0..w {
@@ -55,16 +55,11 @@ impl<B: Backend> App<B> {
 
                     let pos = [0., 0., draw_scale, draw_scale];
 
-                    let transform = c.transform.trans(
-                        w_idx as f64 * draw_scale,
-                        h_idx as f64 * draw_scale);
+                    let transform = c
+                        .transform
+                        .trans(w_idx as f64 * draw_scale, h_idx as f64 * draw_scale);
 
-                    Rectangle::new(color).draw(
-                        pos,
-                        &c.draw_state,
-                        transform,
-                        gl,
-                    );
+                    Rectangle::new(color).draw(pos, &c.draw_state, transform, gl);
                 }
             }
         });
@@ -75,6 +70,7 @@ impl<B: Backend> App<B> {
         args: &UpdateArgs,
     ) {
         self.conway.fuzz(self.update_noise);
+        self.conway.fuzz_edges(self.edge_noise);
         self.conway.step()
     }
 }
@@ -92,11 +88,15 @@ pub struct Args {
     pub initial_density: f64,
 
     /// The noise to apply to the grid.
-    #[arg(long, default_value_t = 1e-5)]
+    #[arg(long, default_value_t = 0.0)]
     pub update_noise: f64,
 
+    /// The noise to apply to the edge.
+    #[arg(long, default_value_t = 0.05)]
+    pub edge_noise: f64,
+
     /// The number of steps to target per second.
-    #[arg(long, default_value_t = 60)]
+    #[arg(long, default_value_t = 120)]
     pub fps: u64,
 
     /// The initial window zoom.
@@ -116,15 +116,16 @@ fn run<B: Backend>(args: &Args) {
     let device = Default::default();
 
     let mut conway: Conway<B> = ConwayConfig {
-        shape: [args.grid_size, args.grid_size]
-    }.init(&device);
+        shape: [args.grid_size, args.grid_size],
+    }
+    .init(&device);
     conway.fuzz(args.initial_density);
 
     // Change this to OpenGL::V2_1 if not working.
     let opengl = OpenGL::V3_2;
 
     // Create a Glutin window.
-    let gs =  (args.grid_size as f64 * args.zoom) as u32;
+    let gs = (args.grid_size as f64 * args.zoom) as u32;
     let mut window: Window = WindowSettings::new("life", [gs, gs])
         .graphics_api(opengl)
         .exit_on_esc(true)
@@ -139,6 +140,7 @@ fn run<B: Backend>(args: &Args) {
         gl: GlGraphics::new(opengl),
         conway,
         update_noise: args.update_noise,
+        edge_noise: args.edge_noise,
     };
 
     let mut events = Events::new(EventSettings::new());
@@ -154,4 +156,3 @@ fn run<B: Backend>(args: &Args) {
         }
     }
 }
-

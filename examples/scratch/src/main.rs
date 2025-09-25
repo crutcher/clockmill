@@ -1,15 +1,15 @@
 #![allow(unused)]
 use bimm_contracts::{assert_shape_contract_periodically, unpack_shape_contract};
-use burn::backend::{Wgpu};
+use burn::backend::Wgpu;
 use burn::prelude::{Backend, Bool, Int, Tensor, s};
 use burn::tensor::DType::F16;
 use burn::tensor::Distribution;
 use burn::tensor::module::unfold4d;
 use burn::tensor::ops::UnfoldOptions;
 use clap::Parser;
+use conway::{Conway, ConwayConfig};
 use indicatif::ProgressBar;
 use std::time::Instant;
-use conway::{Conway, ConwayConfig};
 
 /// Conway's Game of Life demo for Burn.
 #[derive(Parser, Debug)]
@@ -50,8 +50,9 @@ fn run<B: Backend>(args: &Args) {
     let warmup = args.steps / args.warmup_fraction;
 
     let mut conway: Conway<B> = ConwayConfig {
-        shape: [args.grid_size, args.grid_size]
-    }.init(&device);
+        shape: [args.grid_size, args.grid_size],
+    }
+    .init(&device);
     conway.fuzz(0.2);
 
     let mut t0: Instant = Instant::now();

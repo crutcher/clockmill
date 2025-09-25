@@ -1,5 +1,5 @@
 use burn::config::Config;
-use burn::prelude::{s, Backend, Bool, Int, Tensor};
+use burn::prelude::{Backend, Bool, Int, Tensor, s};
 use burn::tensor::{Distribution, RangesArg, Slice};
 
 #[derive(Config, Debug)]
@@ -10,9 +10,12 @@ pub struct ConwayConfig {
 
 impl ConwayConfig {
     /// Initialize a [`Conway`] module.
-    pub fn init<B: Backend>(self, device: &B::Device) -> Conway<B> {
+    pub fn init<B: Backend>(
+        self,
+        device: &B::Device,
+    ) -> Conway<B> {
         Conway {
-            state: Tensor::<B, 2, Int>::zeros(self.shape, device).bool()
+            state: Tensor::<B, 2, Int>::zeros(self.shape, device).bool(),
         }
     }
 }
@@ -30,15 +33,53 @@ impl<B: Backend> Conway<B> {
         self.state.shape().dims()
     }
 
-    pub fn fuzz(&mut self, density: f64) {
+    pub fn fuzz(
+        &mut self,
+        density: f64,
+    ) {
         let noise: Tensor<B, 2, Bool> = Tensor::<B, 2>::random(
             self.shape(),
             Distribution::Bernoulli(density),
             &self.device(),
         )
-            .equal_elem(1.0);
+        .equal_elem(1.0);
 
         self.state = self.state.clone().bool_or(noise);
+    }
+
+    pub fn fuzz_edges(
+        &mut self,
+        density: f64,
+    ) {
+        let [h, w] = self.shape();
+
+        let mut state = self.state.clone();
+
+        state = state.clone().slice_assign(
+            s![0, ..],
+            Tensor::<B, 2>::random([1, w], Distribution::Bernoulli(density), &self.device())
+                .equal_elem(1.0),
+        );
+
+        state = state.clone().slice_assign(
+            s![-1, ..],
+            Tensor::<B, 2>::random([1, w], Distribution::Bernoulli(density), &self.device())
+                .equal_elem(1.0),
+        );
+
+        state = state.clone().slice_assign(
+            s![.., 0],
+            Tensor::<B, 2>::random([h, 1], Distribution::Bernoulli(density), &self.device())
+                .equal_elem(1.0),
+        );
+
+        state = state.clone().slice_assign(
+            s![.., -1],
+            Tensor::<B, 2>::random([h, 1], Distribution::Bernoulli(density), &self.device())
+                .equal_elem(1.0),
+        );
+
+        self.state = state;
     }
 
     pub fn step(&mut self) {
@@ -46,14 +87,13 @@ impl<B: Backend> Conway<B> {
     }
 
     pub fn neighbor_count(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Int> {
-        let x = state;
-        let x: Tensor<B, 3, Bool> = x.unfold(0, 3, 1);
-        let x: Tensor<B, 4, Bool> = x.unfold(1, 3, 1);
-
-        let x: Tensor<B, 4, Int> = x.int();
-        let x = x.sum_dim(2).sum_dim(3).squeeze_dims::<2>(&[2, 3]);
-
-        x
+        state
+            .unfold::<3, usize>(0, 3, 1)
+            .unfold::<4, usize>(1, 3, 1)
+            .int()
+            .sum_dim(2)
+            .sum_dim(3)
+            .squeeze_dims::<2>(&[2, 3])
     }
 
     pub fn next_inner(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
@@ -64,7 +104,10 @@ impl<B: Backend> Conway<B> {
         let neighbor_count = neighbor_count - live.clone().int();
 
         let survivors = live.clone().bool_and(
-            neighbor_count.clone().equal_elem(2).bool_or(neighbor_count.clone().equal_elem(3))
+            neighbor_count
+                .clone()
+                .equal_elem(2)
+                .bool_or(neighbor_count.clone().equal_elem(3)),
         );
 
         let spawners = live.bool_not().bool_and(neighbor_count.equal_elem(3));
@@ -79,22 +122,20 @@ impl<B: Backend> Conway<B> {
     }
 
     fn slices_shape(slices: &[Slice; 2]) -> [usize; 2] {
-        [
-            Self::slice_size(&slices[0]),
-            Self::slice_size(&slices[1])
-        ]
+        [Self::slice_size(&slices[0]), Self::slice_size(&slices[1])]
     }
 
-    pub fn read_slice<R>(&self, ranges: R) -> Vec<Vec<bool>>
-    where R: RangesArg<2>
+    pub fn read_slice<R>(
+        &self,
+        ranges: R,
+    ) -> Vec<Vec<bool>>
+    where
+        R: RangesArg<2>,
     {
         let slices = ranges.into_slices(self.state.shape());
         let [h, w] = Self::slices_shape(&slices);
 
-        let block_data = self.state
-            .clone()
-            .slice(slices)
-            .to_data();
+        let block_data = self.state.clone().slice(slices).to_data();
 
         let block_slice: &[u32] = block_data.as_slice().unwrap();
 
@@ -103,15 +144,22 @@ impl<B: Backend> Conway<B> {
             let start = hidx * w;
 
             result.push(
-            block_slice[start..start + w].iter().map(|&x| x != 0).collect()
+                block_slice[start..start + w]
+                    .iter()
+                    .map(|&x| x != 0)
+                    .collect(),
             )
         }
 
         result
     }
 
-    pub fn write_slice<R>(&mut self, ranges: R, data: &Vec<Vec<bool>>)
-    where R: RangesArg<2>
+    pub fn write_slice<R>(
+        &mut self,
+        ranges: R,
+        data: &Vec<Vec<bool>>,
+    ) where
+        R: RangesArg<2>,
     {
         let slices = ranges.into_slices(self.state.shape());
         let [h, w] = Self::slices_shape(&slices);
@@ -137,69 +185,53 @@ impl<B: Backend> Conway<B> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use burn::backend::Wgpu;
     use burn::prelude::s;
     use burn::tensor::TensorData;
-    use super::*;
 
     #[test]
     fn test_setup() {
         let device = Default::default();
-        let config = ConwayConfig {
-            shape: [10, 10]
-        };
+        let config = ConwayConfig { shape: [10, 10] };
         let mut _conway: Conway<Wgpu> = config.init(&device);
     }
 
     #[test]
     fn test_logic() {
         let device = Default::default();
-        let config = ConwayConfig {
-            shape: [5, 5]
-        };
+        let config = ConwayConfig { shape: [5, 5] };
         let mut conway: Conway<Wgpu> = config.init(&device);
 
         assert_eq!(
             conway.read_slice(s![1..3, 1..3]),
-            vec![
-                vec![false, false],
-                vec![false, false]
-            ]);
+            vec![vec![false, false], vec![false, false]]
+        );
 
-        conway.write_slice(s![1..3, 1..3], &vec![
-            vec![true, true],
-            vec![true, false]
-        ]);
+        conway.write_slice(s![1..3, 1..3], &vec![vec![true, true], vec![true, false]]);
 
-        conway.write_slice(s![-2.., -2..], &vec![
-            vec![false, true],
-            vec![true, true]
-        ]);
+        conway.write_slice(s![-2.., -2..], &vec![vec![false, true], vec![true, true]]);
 
         assert_eq!(
             conway.read_slice(s![1..3, 1..3]),
-            vec![
-                vec![true, true],
-                vec![true, false]
-            ]);
+            vec![vec![true, true], vec![true, false]]
+        );
 
-        Conway::neighbor_count(conway.state.clone()).to_data().assert_eq(
-            &TensorData::from([
-                [3, 3, 1],
-                [3, 3, 2],
-                [1, 2, 3],
-            ]),
-            false);
+        Conway::neighbor_count(conway.state.clone())
+            .to_data()
+            .assert_eq(&TensorData::from([[3, 3, 1], [3, 3, 2], [1, 2, 3]]), false);
 
-        Conway::next_inner(conway.state.clone()).to_data().assert_eq(
-            &TensorData::from([
-                [false, false, false, false, false],
-                [false, true, true, false, false],
-                [false, true, true, false, false],
-                [false, false, false, true, true],
-                [false, false, false, true, true],
-            ]),
-            false
-        )
+        Conway::next_inner(conway.state.clone())
+            .to_data()
+            .assert_eq(
+                &TensorData::from([
+                    [false, false, false, false, false],
+                    [false, true, true, false, false],
+                    [false, true, true, false, false],
+                    [false, false, false, true, true],
+                    [false, false, false, true, true],
+                ]),
+                false,
+            )
     }
 }

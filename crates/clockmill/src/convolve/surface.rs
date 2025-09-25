@@ -1,10 +1,8 @@
 //! # Surface Convolutions (2D)
 
-use bimm_contracts::{assert_shape_contract_periodically, unpack_shape_contract};
 use burn::Tensor;
 use burn::prelude::Backend;
 use burn::tensor::BasicOps;
-use burn::tensor::ops::unfold::calculate_unfold_windows;
 
 /// Convolve a neighborhood function over a 2D tensor.
 ///
@@ -29,17 +27,22 @@ where
     KOut: BasicOps<B>,
     F: Fn(Tensor<B, 6, KIn>) -> Tensor<B, 4, KOut>,
 {
-    let [batch, c_in, height, width] =
-        unpack_shape_contract!(["batch", "c_in", "height", "width"], &input.shape().dims);
-
-    let h_wins = calculate_unfold_windows(height, kernel[0], 1);
-    let w_wins = calculate_unfold_windows(width, kernel[1], 1);
+    #[cfg(debug_assertions)]
+    let [batch, c_in, height, width] = bimm_contracts::unpack_shape_contract!(
+        ["batch", "c_in", "height", "width"],
+        &input.shape().dims
+    );
+    #[cfg(debug_assertions)]
+    let h_wins = burn::tensor::ops::unfold::calculate_unfold_windows(height, kernel[0], 1);
+    #[cfg(debug_assertions)]
+    let w_wins = burn::tensor::ops::unfold::calculate_unfold_windows(width, kernel[1], 1);
 
     let x: Tensor<B, 6, KIn> = input
         .unfold::<5, usize>(2, kernel[0], 1)
         .unfold::<6, usize>(3, kernel[1], 1);
 
-    assert_shape_contract_periodically!(
+    #[cfg(debug_assertions)]
+    bimm_contracts::assert_shape_contract_periodically!(
         ["batch", "c_in", "h_wins", "w_wins", "kernel0", "kernel1"],
         &x.shape().dims,
         &[
@@ -54,7 +57,8 @@ where
 
     let x: Tensor<B, 6, KIn> = x.permute([0, 2, 3, 1, 4, 5]);
 
-    assert_shape_contract_periodically!(
+    #[cfg(debug_assertions)]
+    bimm_contracts::assert_shape_contract_periodically!(
         ["batch", "h_wins", "w_wins", "c_in", "kernel0", "kernel1"],
         &x.shape().dims,
         &[
@@ -69,7 +73,8 @@ where
 
     let x = (func)(x);
 
-    assert_shape_contract_periodically!(
+    #[cfg(debug_assertions)]
+    bimm_contracts::assert_shape_contract_periodically!(
         ["batch", "h_wins", "w_wins", "c_out"],
         &x.shape().dims,
         &[("batch", batch), ("h_wins", h_wins), ("w_wins", w_wins),]

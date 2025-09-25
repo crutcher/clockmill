@@ -13,13 +13,32 @@ use piston::{EventLoop, OpenGLWindow};
 mod app;
 mod color;
 
+fn parse_shape(s: &str) -> Result<[usize; 2], String> {
+    if s.contains(",") {
+        let parts: Vec<&str> = s.split(',').collect();
+        if parts.len() != 2 {
+            return Err("Shape must be in the format WIDTH,HEIGHT".to_string());
+        }
+        let width = parts[0]
+            .parse::<usize>()
+            .map_err(|_| "Invalid width".to_string())?;
+        let height = parts[1]
+            .parse::<usize>()
+            .map_err(|_| "Invalid height".to_string())?;
+        Ok([width, height])
+    } else {
+        let size = s.parse::<usize>().map_err(|_| "Invalid size".to_string())?;
+        Ok([size, size])
+    }
+}
+
 /// Conway's Game of Life demo for Burn.
 #[derive(Parser, Debug)]
 #[command(long_about = None)]
 pub struct Args {
-    /// The width and height of the grid.
-    #[arg(long, default_value_t = 400)]
-    pub grid_size: usize,
+    /// The grid shape as `HEIGHTxWIDTH`.
+    #[arg(long, value_parser=parse_shape, default_value="400")]
+    pub grid_shape: [usize; 2],
 
     /// The initial density of the grid.
     #[arg(long, default_value_t = 0.1)]
@@ -59,7 +78,7 @@ fn main() {
 fn run<B: Backend>(args: &Args) {
     let device = Default::default();
 
-    let mut conway: Conway<B> = ConwayConfig::new([args.grid_size, args.grid_size]).init(&device);
+    let mut conway: Conway<B> = ConwayConfig::new(args.grid_shape).init(&device);
     conway.fuzz(args.initial_density);
     conway.wrap();
 
@@ -67,12 +86,17 @@ fn run<B: Backend>(args: &Args) {
     let opengl = OpenGL::V3_2;
 
     // Create a Glutin window.
-    let gs = (args.grid_size as f64 * args.zoom) as u32;
-    let mut window: Window = WindowSettings::new("fishbowl", [gs, gs])
-        .graphics_api(opengl)
-        .exit_on_esc(true)
-        .build()
-        .unwrap();
+    let mut window: Window = WindowSettings::new(
+        "fishbowl",
+        [
+            args.grid_shape[1] as f64 * args.zoom,
+            args.grid_shape[0] as f64 * args.zoom,
+        ],
+    )
+    .graphics_api(opengl)
+    .exit_on_esc(true)
+    .build()
+    .unwrap();
 
     // Load the OpenGL function pointers
     gl::load_with(|s| window.get_proc_address(s) as *const _);

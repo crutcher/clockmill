@@ -34,13 +34,13 @@ impl<B: Backend> FishbowlApp<B> {
         // TODD: this should all be a one-step Image::draw().
 
         self.gl.draw(args.viewport(), |c, gl| {
-            for (w_idx, col) in state_data.iter().enumerate() {
-                for (h_idx, is_live) in col.iter().enumerate() {
+            for (h_idx, col) in state_data.iter().enumerate() {
+                for (w_idx, is_live) in col.iter().enumerate() {
                     let is_live = *is_live;
 
                     let was_live = previous_data
                         .as_ref()
-                        .map(|prev| prev[w_idx][h_idx])
+                        .map(|prev| prev[h_idx][w_idx])
                         .unwrap_or(false);
 
                     let color = match (was_live, is_live) {

@@ -2,9 +2,6 @@
 name = "conway_speedtest"
 publish = false
 edition.workspace = true
-version.workspace = true
-repository.workspace = true
-license.workspace = true
 rust-version.workspace = true
 
 [dependencies]

@@ -7,7 +7,8 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-burn = { workspace = true, features = ["fusion", "autotune", "cuda"] }
+burn = { workspace = true, features = ["fusion", "autotune", "wgpu"] }
+conway = { path = "../../crates/conway" }
 clap = { workspace = true, features = ["derive"] }
 indicatif = { workspace = true }
 

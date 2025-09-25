@@ -1671,6 +1671,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "conway"
+version = "0.3.7"
+dependencies = [
+ "burn 0.19.0",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3014,6 +3021,7 @@ dependencies = [
  "bimm-contracts",
  "burn 0.19.0",
  "clap",
+ "conway",
  "gl 0.14.0",
  "piston",
  "piston2d-graphics",
@@ -6427,6 +6435,7 @@ dependencies = [
  "bimm-contracts",
  "burn 0.19.0",
  "clap",
+ "conway",
  "indicatif",
 ]
 

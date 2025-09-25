@@ -1,0 +1,16 @@
+[package]
+name = "conway"
+edition.workspace = true
+version.workspace = true
+repository.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+burn = { workspace = true }
+
+[dev-dependencies]
+burn = { workspace = true, features = ["wgpu"] }
+
+[lints]
+workspace = true

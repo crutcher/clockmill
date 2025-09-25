@@ -63,7 +63,7 @@ fn run<B: Backend>(args: &Args) {
 
     // Create a Glutin window.
     let gs = (args.grid_size as f64 * args.zoom) as u32;
-    let mut window: Window = WindowSettings::new("life", [gs, gs])
+    let mut window: Window = WindowSettings::new("fishbowl", [gs, gs])
         .graphics_api(opengl)
         .exit_on_esc(true)
         .build()

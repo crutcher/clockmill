@@ -109,11 +109,11 @@ pub struct LBMOperations<B: Backend> {
 impl<B: Backend> LBMOperations<B> {
     /// Initialize LBM operations.
     pub fn init(device: &B::Device) -> Self {
-        let ex = Tensor::<B, 2>::from_data(
+        let eu = Tensor::<B, 2>::from_data(
             [[-1.0, 0.0, 1.0], [-1.0, 0.0, 1.0], [-1.0, 0.0, 1.0]],
             device,
         );
-        let ey = Tensor::<B, 2>::from_data(
+        let ev = Tensor::<B, 2>::from_data(
             [[1.0, 1.0, 1.0], [0.0, 0.0, 0.0], [-1.0, -1.0, -1.0]],
             device,
         );
@@ -126,7 +126,7 @@ impl<B: Backend> LBMOperations<B> {
             device,
         );
 
-        Self { ev: ex, eu: ey, w }
+        Self { ev, eu, w }
     }
 
     /// LBM Equilibrium.

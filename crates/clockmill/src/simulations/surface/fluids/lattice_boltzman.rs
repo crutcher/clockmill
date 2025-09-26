@@ -57,7 +57,7 @@ pub struct LBM<B: Backend> {
     /// The current simulation step.
     pub step_count: u64,
 
-    /// The world state: ``[H, W, Y, X]``
+    /// The world state: ``[H, W, V, U]``
     pub state: Tensor<B, 4>,
 }
 
@@ -154,7 +154,7 @@ impl<B: Backend> LBMOperations<B> {
         let ev: Tensor<B, D> = self.ev.clone().expand::<D, _>(shape.clone());
         let w: Tensor<B, D> = self.w.clone().expand::<D, _>(shape.clone());
 
-        // Compute density (sum over X, Y dimensions)
+        // Compute density (sum over V, U dimensions)
         let rho = state.clone().sum_dim(y_dim).sum_dim(x_dim);
 
         let dv: Tensor<B, D> = ((state.clone() * ev.clone()).sum_dim(y_dim).sum_dim(x_dim)

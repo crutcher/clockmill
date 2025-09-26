@@ -1,5 +1,6 @@
 //! # Lattice-Boltzmann Fluid Simulation
 
+use bimm_contracts::assert_shape_contract_periodically;
 use burn::Tensor;
 use burn::config::Config;
 use burn::module::Module;
@@ -57,7 +58,7 @@ pub struct LBM<B: Backend> {
     /// The current simulation step.
     pub step_count: u64,
 
-    /// The world state: ``[H, W, X, Y]``
+    /// The world state: ``[H, W, Y, X]``
     pub state: Tensor<B, 4>,
 }
 
@@ -93,10 +94,76 @@ impl<B: Backend> LBM<B> {
     }
 }
 
+/// LBM Equilibrium.
+///
+/// # Arguments
+///
+/// - `state`: LBM state tensor, with shape ``[..., Y, X]`` over cell flow state.
+///
+/// # Returns
+///
+/// The equilibrium state tensor, with the same shape as `state`.
+#[allow(unused)]
+pub fn equilibrium_kernel<B: Backend, const D: usize>(state: Tensor<B, D>) -> Tensor<B, D> {
+    assert!(D >= 2, "D must be at least 2: got {}", D);
+    assert_shape_contract_periodically!([..., "Y", "X"], &state.shape().dims, &[("Y", 3), ("X", 3)]);
+
+    let device = state.device();
+
+    let shape = state.shape();
+
+    let rank = state.shape().num_dims();
+    let y_dim = rank - 2;
+    let x_dim = rank - 1;
+
+    // Compute density (sum over X, Y dimensions)
+    // [..., 1, 1]
+    let rho = state.clone().sum_dim(y_dim).sum_dim(x_dim);
+
+    // Direction vectors in 3x3 layout
+    let ex: Tensor<B, D> = Tensor::<B, 2>::from_data(
+        [[-1.0, 0.0, 1.0], [-1.0, 0.0, 1.0], [-1.0, 0.0, 1.0]],
+        &device,
+    )
+    .expand::<D, _>(shape.clone());
+
+    let ey: Tensor<B, D> = Tensor::<B, 2>::from_data(
+        [[1.0, 1.0, 1.0], [0.0, 0.0, 0.0], [-1.0, -1.0, -1.0]],
+        &device,
+    )
+    .expand::<D, _>(shape.clone());
+
+    let ux: Tensor<B, D> = ((state.clone() * ex.clone()).sum_dim(y_dim).sum_dim(x_dim)
+        / rho.clone())
+    .expand(shape.clone());
+
+    let uy: Tensor<B, D> = ((state.clone() * ey.clone()).sum_dim(y_dim).sum_dim(x_dim)
+        / rho.clone())
+    .expand(shape.clone());
+
+    let u_dot_e: Tensor<B, D> = ex.clone() * ux.clone() + ey.clone() * uy.clone();
+    let u_sq: Tensor<B, D> = ux.clone().powi_scalar(2) + uy.clone().powi_scalar(2);
+
+    // Equilibrium weights in 3x3 layout
+    let w: Tensor<B, 2> = Tensor::<B, 2>::from_data(
+        [
+            [1.0 / 36.0, 1.0 / 9.0, 1.0 / 36.0],
+            [1.0 / 9.0, 4.0 / 9.0, 1.0 / 9.0],
+            [1.0 / 36.0, 1.0 / 9.0, 1.0 / 36.0],
+        ],
+        &device,
+    );
+
+    w.expand(shape)
+        * rho
+        * (1.0 + 3.0 * u_dot_e.clone() + 4.5 * u_dot_e.powi_scalar(2) - 1.5 * u_sq)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use burn::backend::Wgpu;
+    use burn::tensor::Distribution;
 
     #[test]
     fn test_lbm_init() {
@@ -110,5 +177,13 @@ mod tests {
         assert_eq!(lbm.step_count(), 0);
         assert_eq!(lbm.device(), device);
         assert_eq!(lbm.state.shape().dims(), [10, 12, 3, 3]);
+    }
+
+    #[test]
+    fn test_equilibrium() {
+        let device = Default::default();
+
+        let state = Tensor::<Wgpu, 3>::random([1, 3, 3], Distribution::Normal(0., 1.), &device);
+        let _eq = equilibrium_kernel(state);
     }
 }

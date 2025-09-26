@@ -36,7 +36,7 @@ fn parse_shape(s: &str) -> Result<[usize; 2], String> {
 #[derive(Parser, Debug)]
 #[command(long_about = None)]
 pub struct Args {
-    /// The grid shape as `HEIGHTxWIDTH`.
+    /// The grid shape as `HEIGHT,WIDTH`, or `SIZE`.
     #[arg(long, value_parser=parse_shape, default_value="400,600")]
     pub grid_shape: [usize; 2],
 

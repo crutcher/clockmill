@@ -157,13 +157,17 @@ impl<B: Backend> LBMOperations<B> {
         // Compute density (sum over V, U dimensions)
         let rho = state.clone().sum_dim(y_dim).sum_dim(x_dim);
 
-        let dv: Tensor<B, D> = ((state.clone() * ev.clone()).sum_dim(y_dim).sum_dim(x_dim)
-            / rho.clone())
-        .expand(shape.clone());
+        let dv: Tensor<B, D> = (state.clone() * ev.clone())
+            .sum_dim(y_dim)
+            .sum_dim(x_dim)
+            .div(rho.clone())
+            .expand(shape.clone());
 
-        let du: Tensor<B, D> = ((state.clone() * eu.clone()).sum_dim(y_dim).sum_dim(x_dim)
-            / rho.clone())
-        .expand(shape.clone());
+        let du: Tensor<B, D> = (state.clone() * eu.clone())
+            .sum_dim(y_dim)
+            .sum_dim(x_dim)
+            .div(rho.clone())
+            .expand(shape.clone());
 
         let u_dot_e: Tensor<B, D> = ev * dv.clone() + eu * du.clone();
         let u_sq: Tensor<B, D> = dv.powi_scalar(2) + du.powi_scalar(2);

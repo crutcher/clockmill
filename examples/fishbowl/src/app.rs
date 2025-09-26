@@ -9,6 +9,8 @@ pub struct FishbowlApp<B: Backend> {
     pub conway: Conway<B>,
     pub update_noise: f64,
     pub color_scheme: ColorScheme,
+    pub step_rate: usize,
+    pub opacity: f32,
 }
 
 impl<B: Backend> FishbowlApp<B> {
@@ -43,12 +45,14 @@ impl<B: Backend> FishbowlApp<B> {
                         .map(|prev| prev[h_idx][w_idx])
                         .unwrap_or(false);
 
-                    let color = match (was_live, is_live) {
+                    let mut color = match (was_live, is_live) {
                         (false, false) => fallow_color,
                         (false, true) => spawn_color,
                         (true, false) => died_color,
                         (true, true) => survivor_color,
                     };
+
+                    color[3] *= self.opacity;
 
                     let pos = [0., 0., draw_scale[0], draw_scale[1]];
 
@@ -66,8 +70,14 @@ impl<B: Backend> FishbowlApp<B> {
         &mut self,
         _args: &UpdateArgs,
     ) {
-        self.conway.fuzz(self.update_noise);
-        self.conway.wrap();
-        self.conway.step_no_wrap()
+        self.advance_frame();
+    }
+
+    pub fn advance_frame(&mut self) {
+        for _ in 0..self.step_rate {
+            self.conway.fuzz(self.update_noise);
+            self.conway.wrap();
+            self.conway.step_no_wrap()
+        }
     }
 }

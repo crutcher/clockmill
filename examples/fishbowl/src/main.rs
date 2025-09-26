@@ -37,24 +37,36 @@ fn parse_shape(s: &str) -> Result<[usize; 2], String> {
 #[command(long_about = None)]
 pub struct Args {
     /// The grid shape as `HEIGHTxWIDTH`.
-    #[arg(long, value_parser=parse_shape, default_value="400")]
+    #[arg(long, value_parser=parse_shape, default_value="400,600")]
     pub grid_shape: [usize; 2],
 
+    /// The number of steps to take per frame.
+    #[arg(long, default_value_t = 2)]
+    pub step_rate: usize,
+
+    /// The number of steps to skip on init.
+    #[arg(long, default_value_t = 100)]
+    pub init_skip_steps: usize,
+
     /// The initial density of the grid.
-    #[arg(long, default_value_t = 0.1)]
+    #[arg(long, default_value_t = 0.03)]
     pub initial_density: f64,
 
-    /// The noise to apply to the grid.
-    #[arg(long, default_value_t = 0.001)]
+    /// The noise to apply to the grid on each step.
+    #[arg(long, default_value_t = 0.0001)]
     pub update_noise: f64,
 
-    /// The number of steps to target per second.
+    /// The max frames per second.
     #[arg(long, default_value_t = 30)]
     pub fps: u64,
 
     /// The initial window zoom.
-    #[arg(long, default_value_t = 2.5)]
+    #[arg(long, default_value_t = 1.5)]
     pub zoom: f64,
+
+    /// The opacity between frames.
+    #[arg(long, default_value_t = 0.05)]
+    pub opacity: f32,
 
     /// The color scheme to use.
     #[arg(long, default_value = "inverted")]
@@ -107,7 +119,12 @@ fn run<B: Backend>(args: &Args) {
         conway,
         update_noise: args.update_noise,
         color_scheme: args.color_scheme,
+        step_rate: args.step_rate,
+        opacity: args.opacity,
     };
+    for _ in 0..args.init_skip_steps {
+        app.advance_frame();
+    }
 
     let mut events = Events::new(EventSettings::new());
     events.set_ups(args.fps);

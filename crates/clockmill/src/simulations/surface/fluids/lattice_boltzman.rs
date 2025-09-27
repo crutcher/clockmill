@@ -189,7 +189,9 @@ impl<B: Backend> LBMOperations<B> {
         state: Tensor<B, D>,
         tau: f32,
     ) -> Tensor<B, D> {
-        (1.0 - tau) * state.clone() + tau * self.equilibrium(state)
+        let equi = self.equilibrium(state.clone());
+        let delta = equi - state.clone();
+        state + delta / tau
     }
 }
 

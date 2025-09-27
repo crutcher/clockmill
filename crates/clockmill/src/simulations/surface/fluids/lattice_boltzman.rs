@@ -3,7 +3,7 @@
 use burn::Tensor;
 use burn::config::Config;
 use burn::module::Module;
-use burn::prelude::Backend;
+use burn::prelude::{Backend, s};
 
 /// Introspection trait for [`LBM`]
 pub trait LBMMeta {
@@ -192,6 +192,42 @@ impl<B: Backend> LBMOperations<B> {
         let equi = self.equilibrium(state.clone());
         let delta = equi - state.clone();
         state + delta / tau
+    }
+
+    /// Streaming Operation.
+    pub fn streaming_window<const D: usize, const D2: usize>(state: Tensor<B, D>) -> Tensor<B, D2> {
+        // state: [..., H_WINS, W_WINS, V=3, U=3, H_KERN=3, W_KERN=3]
+        // output: [..., H_WINS, W_WINS, V=3, U=3]
+
+        assert_eq!(D - 2, D2, "D ({D}) - 2 must equal D2 ({D2})");
+
+        let mut rows = Vec::with_capacity(3);
+        for v in 0..3 {
+            let source_v = 2 - v;
+
+            let mut columns = Vec::with_capacity(3);
+            for u in 0..3 {
+                let source_u = 2 - u;
+
+                let column = state
+                    .clone()
+                    .slice(s![
+                        -1,
+                        v..v + 1,               // this V direction
+                        u..u + 1,               // this U direction
+                        source_v..source_v + 1, // source kernel H
+                        source_u..source_u + 1  // source kernel W
+                    ])
+                    .squeeze_dims::<D2>(&[-2, -1]);
+
+                columns.push(column);
+            }
+            // Concatenate along U dimension
+            rows.push(Tensor::cat(columns, D - 3));
+        }
+
+        // Concatenate along V dimension
+        Tensor::cat(rows, D - 4)
     }
 }
 

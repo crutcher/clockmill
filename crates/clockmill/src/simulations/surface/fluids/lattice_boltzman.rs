@@ -1,9 +1,11 @@
 //! # Lattice-Boltzmann Fluid Simulation
 
+use bimm_contracts::assert_shape_contract_periodically;
 use burn::Tensor;
 use burn::config::Config;
 use burn::module::Module;
-use burn::prelude::{Backend, s};
+use burn::prelude::Backend;
+use burn::tensor::Slice;
 
 /// Introspection trait for [`LBM`]
 pub trait LBMMeta {
@@ -193,42 +195,82 @@ impl<B: Backend> LBMOperations<B> {
         let delta = equi - state.clone();
         state + delta / tau
     }
+}
 
-    /// Streaming Operation.
-    pub fn streaming_window<const D: usize, const D2: usize>(state: Tensor<B, D>) -> Tensor<B, D2> {
-        // state: [..., H_WINS, W_WINS, V=3, U=3, H_KERN=3, W_KERN=3]
-        // output: [..., H_WINS, W_WINS, V=3, U=3]
+/// Lattice-Boltzmann Method Streaming Operation.
+///
+/// This operation applies the LBM streaming operation,
+/// swapping complementary direction pairs from neighboring cells.
+///
+/// ```text
+/// # From (HxW grid of VxU cells)
+/// | _, _, _ |; | _, _, _ |; | _, _, _ |
+/// | _, _, _ |; | _, _, _ |; | _, _, _ |
+/// | _, _, a |; | _, b, _ |; | c, _, _ |
+///
+/// | _, _, _ |; | _, _, _ |; | _, _, _ |
+/// | _, _, d |; | _, e, _ |; | f, _, _ |
+/// | _, _, _ |; | _, _, _ |; | _, _, _ |
+///
+/// | _, _, h |; | _, i, _ |; | j, _, _ |
+/// | _, _, _ |; | _, _, _ |; | _, _, _ |
+/// | _, _, _ |; | _, _, _ |; | _, _, _ |
+///
+/// # To
+/// | a, b, c |
+/// | d, e, f |
+/// | h, i, j |
+/// ```
+pub fn streaming_window_op<B: Backend, const D: usize, const D2: usize>(
+    state: Tensor<B, D>
+) -> Tensor<B, D2> {
+    // state: [..., V=3, U=3, H_KERN=3, W_KERN=3]
+    // output: [..., V=3, U=3]
 
-        assert_eq!(D - 2, D2, "D ({D}) - 2 must equal D2 ({D2})");
+    assert_shape_contract_periodically!(
+        [..., "V", "U", "H_KERN", "W_KERN"],
+        &state.shape().dims,
+        &[("V", 3), ("U", 3), ("H_KERN", 3), ("W_KERN", 3)]
+    );
 
-        let mut rows = Vec::with_capacity(3);
-        for v in 0..3 {
-            let source_v = 2 - v;
+    assert_eq!(D - 2, D2, "D ({D}) - 2 must equal D2 ({D2})");
 
-            let mut columns = Vec::with_capacity(3);
-            for u in 0..3 {
-                let source_u = 2 - u;
+    let mut ranges: [Slice; D] = (0..D)
+        .into_iter()
+        .map(|_| Slice::new(0, None, 1))
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap();
 
-                let column = state
-                    .clone()
-                    .slice(s![
-                        -1,
-                        v..v + 1,               // this V direction
-                        u..u + 1,               // this U direction
-                        source_v..source_v + 1, // source kernel H
-                        source_u..source_u + 1  // source kernel W
-                    ])
-                    .squeeze_dims::<D2>(&[-2, -1]);
+    let mut rows = Vec::with_capacity(3);
+    for h_idx in 0isize..3 {
+        let target_v = h_idx;
+        let source_v = 2 - h_idx;
 
-                columns.push(column);
-            }
-            // Concatenate along U dimension
-            rows.push(Tensor::cat(columns, D - 3));
+        ranges[D - 4] = Slice::new(source_v, Some(source_v + 1), 1);
+        ranges[D - 2] = Slice::new(target_v, Some(target_v + 1), 1);
+
+        let mut columns = Vec::with_capacity(3);
+        for w_idx in 0isize..3 {
+            let target_u = w_idx;
+            let source_u = 2 - w_idx;
+
+            ranges[D - 3] = Slice::new(source_u, Some(source_u + 1), 1);
+            ranges[D - 1] = Slice::new(target_u, Some(target_u + 1), 1);
+
+            let column = state
+                .clone()
+                .slice(ranges.clone())
+                .squeeze_dims::<D2>(&[-2, -1]);
+
+            columns.push(column);
         }
-
-        // Concatenate along V dimension
-        Tensor::cat(rows, D - 4)
+        // Concatenate along U dimension
+        rows.push(Tensor::cat(columns, D - 3));
     }
+
+    // Concatenate along V dimension
+    Tensor::cat(rows, D - 4)
 }
 
 #[cfg(test)]
@@ -236,6 +278,84 @@ mod tests {
     use super::*;
     use burn::backend::Wgpu;
     use burn::tensor::Distribution;
+
+    #[test]
+    #[rustfmt::skip]
+    fn test_streaming_window_op() {
+        type B = Wgpu;
+        let device = Default::default();
+
+        let window: Tensor<B, 4> = Tensor::from_data([
+            [
+                [
+                    [0., 1., 2.],
+                    [3., 4., 5.],
+                    [6., 7., 8.]
+                ],
+                [
+                    [9., 10., 11.],
+                    [12., 13., 14.],
+                    [15., 16., 17.]
+                ],
+                [
+                    [18., 19., 20.],
+                    [21., 22., 23.],
+                    [24., 25., 26.]
+                ],
+            ],
+            [
+                [
+                    [27., 28., 29.],
+                    [30., 31., 32.],
+                    [33., 34., 35.]
+                ],
+                [
+                    [36., 37., 38.],
+                    [39., 40., 41.],
+                    [42., 43., 44.]
+                ],
+                [
+                    [45., 46., 47.],
+                    [48., 49., 50.],
+                    [51., 52., 53.]
+                ],
+            ],
+            [
+                [
+                    [54., 55., 56.],
+                    [57., 58., 59.],
+                    [60., 61., 62.]
+                ],
+                [
+                    [63., 64., 65.],
+                    [66., 67., 68.],
+                    [69., 70., 71.]
+                ],
+                [
+                    [72., 73., 74.],
+                    [75., 76., 77.],
+                    [78., 79., 80.]
+                ],
+            ],
+        ], &device);
+        let window = window.permute([2, 3, 0, 1]).unsqueeze();
+
+        // println!("{:?}", window.shape());
+
+        let result: Tensor<B, 3> = streaming_window_op::<B, 5, 3>(window.clone());
+        assert_eq!(result.shape().dims, vec![1, 3, 3]);
+
+        let expected: Tensor<B, 3> = Tensor::from_data([[
+            [8., 16., 24.],
+            [32., 40., 48.],
+            [56., 64., 72.],
+        ]], &device);
+
+        // println!("result: {:#?}", result.to_data().as_slice::<f32>());
+        // println!("expected: {:#?}", expected.to_data().as_slice::<f32>());
+
+        result.to_data().assert_eq(&expected.to_data(), false);
+    }
 
     #[test]
     fn test_lbm_init() {

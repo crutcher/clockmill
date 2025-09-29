@@ -152,8 +152,7 @@ impl<B: Backend, const D: usize> VuEquiPartials<B, D> {
         let u_dot_e: Tensor<B, D> = (self.ev * self.dv.clone().expand(shape.clone()))
             + self.eu * self.du.clone().expand(shape.clone());
 
-        let u_sq: Tensor<B, D> = self.dv.powi_scalar(2).expand(shape.clone())
-            + self.du.powi_scalar(2).expand(shape.clone());
+        let u_sq: Tensor<B, D> = self.dv.powi_scalar(2) + self.du.powi_scalar(2);
 
         VuEquiTerms {
             rho: self.rho,
@@ -206,7 +205,9 @@ impl<B: Backend> LBMOperations<B> {
 
         let w: Tensor<B, D> = self.w.clone().expand::<D, _>(shape.clone());
 
-        w * rho * (1.0 + 3.0 * u_dot_e.clone() + 4.5 * u_dot_e.powi_scalar(2) - 1.5 * u_sq)
+        w * rho
+            * (1.0 + 3.0 * u_dot_e.clone() + 4.5 * u_dot_e.powi_scalar(2)
+                - 1.5 * u_sq.expand(shape))
     }
 
     /// Compute the directional VU cell partials.
@@ -359,7 +360,7 @@ pub fn streaming_window_op<B: Backend, const D: usize, const D2: usize>(
 mod tests {
     use super::*;
     use burn::backend::Wgpu;
-    use burn::tensor::Distribution;
+    use burn::tensor::{Distribution, Tolerance};
 
     #[test]
     fn test_expand_vu_cell_sum() {
@@ -393,6 +394,7 @@ mod tests {
             ],
             &device,
         );
+        let shape = input.shape();
 
         let partials = ops.vu_equi_partials::<3>(input.clone());
 
@@ -446,6 +448,30 @@ mod tests {
             )
             .to_data(),
             true,
+        );
+
+        let terms = partials.clone().equi_terms();
+        terms.rho.clone().to_data().assert_eq(
+            &Tensor::<B, 3>::from_data([[[45.]], [[450.]]], &device).to_data(),
+            true,
+        );
+
+        let vs_a = (((1. + 2. + 3.) - (7. + 8. + 9.)) / 45f32).powi(2);
+        let vs_b = (((10. + 20. + 30.) - (70. + 80. + 90.)) / 450f32).powi(2);
+
+        let us_a = (((3. + 6. + 9.) - (1. + 4. + 7.)) / 45f32).powi(2);
+        let us_b = (((30. + 60. + 90.) - (10. + 40. + 70.)) / 450f32).powi(2);
+
+        terms.u_sq.clone().to_data().assert_approx_eq::<f32>(
+            &Tensor::<B, 3>::from_data([[[vs_a + us_a]], [[vs_b + us_b]]], &device).to_data(),
+            Tolerance::default(),
+        );
+
+        terms.u_dot_e.clone().to_data().assert_approx_eq::<f32>(
+            &(partials.ev.clone() * partials.dv.clone().expand(shape.clone())
+                + partials.eu.clone() * partials.du.clone().expand(shape))
+            .to_data(),
+            Tolerance::default(),
         );
     }
 

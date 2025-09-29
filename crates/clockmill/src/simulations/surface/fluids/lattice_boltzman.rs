@@ -263,6 +263,26 @@ impl<B: Backend> LBMOperations<B> {
         let delta = equi - state.clone();
         state + delta / tau
     }
+
+    /// Compute the streaming updates for the non-border cells of a state.
+    ///
+    /// # Arguments
+    ///
+    /// - `state`: a ``[H, W, V, U]`` input.
+    ///
+    /// # Returns
+    ///
+    /// The stream updates for the ``[1:-1, 1:-1, V, U]`` interior.
+    pub fn interior_streaming_updates(
+        &self,
+        state: Tensor<B, 4>,
+    ) -> Tensor<B, 4> {
+        streaming_window_op(
+            state
+                .unfold::<5, usize>(0, 3, 1)
+                .unfold::<6, usize>(1, 3, 1),
+        )
+    }
 }
 
 /// Calculate the total energy in a ``[..., V=3, U=3]`` cell.
@@ -285,8 +305,14 @@ pub fn vu_cell_sum<B: Backend, const D: usize>(state: Tensor<B, D>) -> Tensor<B,
 /// This operation applies the LBM streaming operation,
 /// swapping complementary direction pairs from neighboring cells.
 ///
+/// # Example
+///
+/// Note: This is the ``[..., H=3, W=3, V=3, U=3]`` view;
+/// though the input is ``[..., V=3, U=3, H=3, W=3]``.
+///
+/// ### From
+///
 /// ```text
-/// # From (HxW grid of VxU cells)
 /// | _, _, _ |; | _, _, _ |; | _, _, _ |
 /// | _, _, _ |; | _, _, _ |; | _, _, _ |
 /// | _, _, a |; | _, b, _ |; | c, _, _ |
@@ -298,8 +324,11 @@ pub fn vu_cell_sum<B: Backend, const D: usize>(state: Tensor<B, D>) -> Tensor<B,
 /// | _, _, h |; | _, i, _ |; | j, _, _ |
 /// | _, _, _ |; | _, _, _ |; | _, _, _ |
 /// | _, _, _ |; | _, _, _ |; | _, _, _ |
+/// ```
 ///
-/// # To
+/// ### To
+///
+/// ```text
 /// | a, b, c |
 /// | d, e, f |
 /// | h, i, j |
@@ -576,5 +605,18 @@ mod tests {
         let state = Tensor::<Wgpu, 3>::random([1, 3, 3], Distribution::Normal(0., 1.), &device);
         let _eq = ops.vu_cell_equilibrium(state.clone());
         let _col = ops.collision(state.clone(), 0.5);
+    }
+
+    #[test]
+    fn test_streaming_updates() {
+        let device = Default::default();
+
+        let ops = LBMOperations::<Wgpu>::init(&device);
+
+        let state =
+            Tensor::<Wgpu, 4>::random([10, 10, 3, 3], Distribution::Normal(0., 1.), &device);
+
+        let updates = ops.interior_streaming_updates(state.clone());
+        assert_eq!(updates.shape().dims(), [10 - 2, 10 - 2, 3, 3]);
     }
 }

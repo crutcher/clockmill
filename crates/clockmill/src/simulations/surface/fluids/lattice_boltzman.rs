@@ -3,7 +3,7 @@
 use burn::Tensor;
 use burn::config::Config;
 use burn::module::Module;
-use burn::prelude::Backend;
+use burn::prelude::{Backend, Shape};
 use burn::tensor::Slice;
 
 /// Introspection trait for [`LBM`]
@@ -107,15 +107,71 @@ pub struct LBMOperations<B: Backend> {
     pub w: Tensor<B, 2>,
 }
 
+/// Partials of the VU Equilibrium Operation.
+#[derive(Clone, Debug)]
+pub struct VuEquiPartials<B: Backend, const D: usize> {
+    /// `V` field bias; shape expanded to ``[..., V, U; D]``
+    pub ev: Tensor<B, D>,
+
+    /// `U` field bias; shape expanded to ``[..., V, U; D]``
+    pub eu: Tensor<B, D>,
+
+    /// `VxU` sum; shape expanded to ``[..., 1, 1; D]``
+    pub rho: Tensor<B, D>,
+
+    /// `V` partial; shape expanded to ``[..., 1, 1; D]``
+    pub dv: Tensor<B, D>,
+
+    /// `U` partial; shape expanded to ``[..., 1, 1; D]``
+    pub du: Tensor<B, D>,
+}
+
+/// Final Terms of the VU Equilibrium Operation.
+#[derive(Clone, Debug)]
+pub struct VuEquiTerms<B: Backend, const D: usize> {
+    /// `VxU` sum; shape expanded to ``[..., 1, 1; D]``
+    pub rho: Tensor<B, D>,
+
+    /// TODO
+    pub u_dot_e: Tensor<B, D>,
+
+    /// TODO
+    pub u_sq: Tensor<B, D>,
+}
+
+impl<B: Backend, const D: usize> VuEquiPartials<B, D> {
+    /// Get the shape of the state.
+    pub fn shape(&self) -> Shape {
+        self.ev.shape()
+    }
+
+    /// Get the [`VuEquiTerms`] for these partials.
+    pub fn equi_terms(self) -> VuEquiTerms<B, D> {
+        let shape = self.shape();
+
+        let u_dot_e: Tensor<B, D> = (self.ev * self.dv.clone().expand(shape.clone()))
+            + self.eu * self.du.clone().expand(shape.clone());
+
+        let u_sq: Tensor<B, D> = self.dv.powi_scalar(2).expand(shape.clone())
+            + self.du.powi_scalar(2).expand(shape.clone());
+
+        VuEquiTerms {
+            rho: self.rho,
+            u_dot_e,
+            u_sq,
+        }
+    }
+}
+
 impl<B: Backend> LBMOperations<B> {
     /// Initialize LBM operations.
     pub fn init(device: &B::Device) -> Self {
-        let eu = Tensor::<B, 2>::from_data(
-            [[-1.0, 0.0, 1.0], [-1.0, 0.0, 1.0], [-1.0, 0.0, 1.0]],
-            device,
-        );
         let ev = Tensor::<B, 2>::from_data(
             [[1.0, 1.0, 1.0], [0.0, 0.0, 0.0], [-1.0, -1.0, -1.0]],
+            device,
+        );
+        let eu = Tensor::<B, 2>::from_data(
+            [[-1.0, 0.0, 1.0], [-1.0, 0.0, 1.0], [-1.0, 0.0, 1.0]],
             device,
         );
         let w = Tensor::<B, 2>::from_data(
@@ -130,7 +186,7 @@ impl<B: Backend> LBMOperations<B> {
         Self { ev, eu, w }
     }
 
-    /// LBM Equilibrium.
+    /// LBM Cellular Equilibrium.
     ///
     /// # Arguments
     ///
@@ -139,41 +195,53 @@ impl<B: Backend> LBMOperations<B> {
     /// # Returns
     ///
     /// The equilibrium tensor, with the same shape as `state`.
-    pub fn equilibrium<const D: usize>(
+    pub fn vu_cell_equilibrium<const D: usize>(
         &self,
         state: Tensor<B, D>,
     ) -> Tensor<B, D> {
         let shape = state.shape();
-        let rank = shape.num_dims();
-        assert!(rank >= 2, "Rank must be at least 2: got {}", rank);
-        assert_eq!(rank, D);
+        assert!(D >= 2, "Rank must be at least 2: got {}", D);
 
-        let y_dim = rank - 2;
-        let x_dim = rank - 1;
+        let VuEquiTerms { rho, u_dot_e, u_sq } = self.vu_equi_partials(state).equi_terms();
 
-        let eu: Tensor<B, D> = self.eu.clone().expand::<D, _>(shape.clone());
-        let ev: Tensor<B, D> = self.ev.clone().expand::<D, _>(shape.clone());
         let w: Tensor<B, D> = self.w.clone().expand::<D, _>(shape.clone());
 
-        // Compute density (sum over V, U dimensions)
-        let rho = state.clone().sum_dim(y_dim).sum_dim(x_dim);
-
-        let dv: Tensor<B, D> = (state.clone() * ev.clone())
-            .sum_dim(y_dim)
-            .sum_dim(x_dim)
-            .div(rho.clone())
-            .expand(shape.clone());
-
-        let du: Tensor<B, D> = (state.clone() * eu.clone())
-            .sum_dim(y_dim)
-            .sum_dim(x_dim)
-            .div(rho.clone())
-            .expand(shape.clone());
-
-        let u_dot_e: Tensor<B, D> = ev * dv.clone() + eu * du.clone();
-        let u_sq: Tensor<B, D> = dv.powi_scalar(2) + du.powi_scalar(2);
-
         w * rho * (1.0 + 3.0 * u_dot_e.clone() + 4.5 * u_dot_e.powi_scalar(2) - 1.5 * u_sq)
+    }
+
+    /// Compute the directional VU cell partials.
+    ///
+    /// These are intermediate sums used in computing equilibrium flow;
+    /// primarily exposed as partial values for testing.
+    ///
+    /// # Argument
+    ///
+    /// - `state`: a rank ``D`` state with shape ``[..., V, U]``.
+    ///
+    /// # Returns
+    ///
+    /// A rank ``D`` [`VuEquiPartials`].
+    pub fn vu_equi_partials<const D: usize>(
+        &self,
+        state: Tensor<B, D>,
+    ) -> VuEquiPartials<B, D> {
+        let shape = state.shape();
+        assert!(D >= 2, "Rank must be at least 2: got {}", D);
+
+        let eu: Tensor<B, D> = self.eu.clone().expand(shape.clone());
+        let ev: Tensor<B, D> = self.ev.clone().expand(shape.clone());
+
+        let rho = vu_cell_sum(state.clone());
+        let dv = vu_cell_sum(state.clone() * ev.clone()).div(rho.clone());
+        let du = vu_cell_sum(state.clone() * eu.clone()).div(rho.clone());
+
+        VuEquiPartials {
+            ev,
+            eu,
+            rho,
+            dv,
+            du,
+        }
     }
 
     /// LBM Collision step.
@@ -190,10 +258,25 @@ impl<B: Backend> LBMOperations<B> {
         state: Tensor<B, D>,
         tau: f32,
     ) -> Tensor<B, D> {
-        let equi = self.equilibrium(state.clone());
+        let equi = self.vu_cell_equilibrium(state.clone());
         let delta = equi - state.clone();
         state + delta / tau
     }
+}
+
+/// Calculate the total energy in a ``[..., V=3, U=3]`` cell.
+///
+/// # Arguments
+///
+/// - `state`: a ``[..., V=3, U=3]`` input.
+///
+/// # Returns
+///
+/// A ``[..., 1, 1]`` result.
+pub fn vu_cell_sum<B: Backend, const D: usize>(state: Tensor<B, D>) -> Tensor<B, D> {
+    let y_dim = D - 2;
+    let x_dim = D - 1;
+    state.sum_dim(y_dim).sum_dim(x_dim)
 }
 
 /// Lattice-Boltzmann Method Streaming Operation.
@@ -277,6 +360,94 @@ mod tests {
     use super::*;
     use burn::backend::Wgpu;
     use burn::tensor::Distribution;
+
+    #[test]
+    fn test_expand_vu_cell_sum() {
+        let device = Default::default();
+
+        let input: Tensor<Wgpu, 3> = Tensor::from_data(
+            [
+                [[1., 2., 3.], [4., 5., 6.], [7., 8., 9.]],
+                [[10., 20., 30.], [40., 50., 60.], [70., 80., 90.]],
+            ],
+            &device,
+        );
+
+        let result = vu_cell_sum::<Wgpu, 3>(input.clone());
+
+        let expected: Tensor<Wgpu, 3> = Tensor::from_data([[[45.]], [[450.]]], &device);
+        result.to_data().assert_eq(&expected.to_data(), true);
+    }
+
+    #[test]
+    fn test_vu_partials() {
+        type B = Wgpu;
+        let device = Default::default();
+
+        let ops: LBMOperations<B> = LBMOperations::init(&device);
+
+        let input: Tensor<B, 3> = Tensor::from_data(
+            [
+                [[1., 2., 3.], [4., 5., 6.], [7., 8., 9.]],
+                [[10., 20., 30.], [40., 50., 60.], [70., 80., 90.]],
+            ],
+            &device,
+        );
+
+        let partials = ops.vu_equi_partials::<3>(input.clone());
+
+        partials.ev.clone().to_data().assert_eq(
+            &Tensor::<B, 3>::from_data(
+                [
+                    [[1., 1., 1.], [0., 0., 0.], [-1., -1., -1.]],
+                    [[1., 1., 1.], [0., 0., 0.], [-1., -1., -1.]],
+                ],
+                &device,
+            )
+            .to_data(),
+            true,
+        );
+        partials.eu.clone().to_data().assert_eq(
+            &Tensor::<B, 3>::from_data(
+                [
+                    [[-1., 0., 1.], [-1., 0., 1.], [-1., 0., 1.]],
+                    [[-1., 0., 1.], [-1., 0., 1.], [-1., 0., 1.]],
+                ],
+                &device,
+            )
+            .to_data(),
+            true,
+        );
+
+        partials.rho.clone().to_data().assert_eq(
+            &Tensor::<B, 3>::from_data([[[45.]], [[450.]]], &device).to_data(),
+            true,
+        );
+
+        partials.dv.clone().to_data().assert_eq(
+            &Tensor::<B, 3>::from_data(
+                [
+                    [[((1. + 2. + 3.) - (7. + 8. + 9.)) / 45.]],
+                    [[((10. + 20. + 30.) - (70. + 80. + 90.)) / 450.]],
+                ],
+                &device,
+            )
+            .to_data(),
+            true,
+        );
+
+        partials.du.clone().to_data().assert_eq(
+            &Tensor::<B, 3>::from_data(
+                [
+                    [[((3. + 6. + 9.) - (1. + 4. + 7.)) / 45.]],
+                    [[((30. + 60. + 90.) - (10. + 40. + 70.)) / 450.]],
+                ],
+                &device,
+            )
+            .to_data(),
+            true,
+        );
+    }
 
     #[test]
     #[rustfmt::skip]
@@ -377,7 +548,7 @@ mod tests {
         let ops = LBMOperations::<Wgpu>::init(&device);
 
         let state = Tensor::<Wgpu, 3>::random([1, 3, 3], Distribution::Normal(0., 1.), &device);
-        let _eq = ops.equilibrium(state.clone());
+        let _eq = ops.vu_cell_equilibrium(state.clone());
         let _col = ops.collision(state.clone(), 0.5);
     }
 }

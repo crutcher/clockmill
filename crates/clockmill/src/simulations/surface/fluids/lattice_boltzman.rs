@@ -1,6 +1,5 @@
 //! # Lattice-Boltzmann Fluid Simulation
 
-use bimm_contracts::assert_shape_contract_periodically;
 use burn::Tensor;
 use burn::config::Config;
 use burn::module::Module;
@@ -230,12 +229,11 @@ pub fn streaming_window_op<B: Backend, const D: usize, const D2: usize>(
     assert_eq!(D - 2, D2, "D ({D}) - 2 must equal D2 ({D2})");
 
     #[cfg(debug_assertions)]
-    assert_shape_contract_periodically!(
+    bimm_contracts::assert_shape_contract_periodically!(
         [..., "V", "U", "H_KERN", "W_KERN"],
         &state.shape().dims,
         &[("V", 3), ("U", 3), ("H_KERN", 3), ("W_KERN", 3)]
     );
-
 
     let mut ranges: [Slice; D] = (0..D)
         .map(|_| Slice::new(0, None, 1))

@@ -227,16 +227,17 @@ pub fn streaming_window_op<B: Backend, const D: usize, const D2: usize>(
     // state: [..., V=3, U=3, H_KERN=3, W_KERN=3]
     // output: [..., V=3, U=3]
 
+    assert_eq!(D - 2, D2, "D ({D}) - 2 must equal D2 ({D2})");
+
+    #[cfg(debug_assertions)]
     assert_shape_contract_periodically!(
         [..., "V", "U", "H_KERN", "W_KERN"],
         &state.shape().dims,
         &[("V", 3), ("U", 3), ("H_KERN", 3), ("W_KERN", 3)]
     );
 
-    assert_eq!(D - 2, D2, "D ({D}) - 2 must equal D2 ({D2})");
 
     let mut ranges: [Slice; D] = (0..D)
-        .into_iter()
         .map(|_| Slice::new(0, None, 1))
         .collect::<Vec<_>>()
         .try_into()

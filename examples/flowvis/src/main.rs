@@ -1,7 +1,9 @@
 use app::FlowVisApp;
 use burn::prelude::Backend;
 use clap::Parser;
-use clockmill::simulations::surface::fluids::lattice_boltzmann::{LBM, LBMConfig, LBMOperations};
+use clockmill::simulations::surface::fluids::lattice_boltzmann::{
+    LBMD2Q9Config, LBMD2Q9Operations, LBMD2Q9State,
+};
 use color::ColorScheme;
 use glutin_window::GlutinWindow as Window;
 use opengl_graphics::{GlGraphics, OpenGL};
@@ -90,7 +92,7 @@ fn main() {
 fn run<B: Backend>(args: &Args) {
     let device = Default::default();
 
-    let world_state: LBM<B> = LBMConfig::new(args.grid_shape).init(&device);
+    let world_state: LBMD2Q9State<B> = LBMD2Q9Config::new(args.grid_shape).init(&device);
 
     // Change this to OpenGL::V2_1 if not working.
     let opengl = OpenGL::V3_2;
@@ -115,7 +117,7 @@ fn run<B: Backend>(args: &Args) {
     let mut app = FlowVisApp {
         gl: GlGraphics::new(opengl),
         world_state,
-        ops: LBMOperations::init(&device),
+        ops: LBMD2Q9Operations::init(&device),
         _color_scheme: args.color_scheme,
         step_rate: args.step_rate,
         opacity: args.opacity,

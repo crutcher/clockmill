@@ -6,7 +6,7 @@ use burn::module::Module;
 use burn::prelude::{Backend, Bool, Shape};
 use burn::tensor::{DType, Slice};
 
-/// Introspection trait for [`LBM`]
+/// Introspection trait for [`LBMD2Q9State`]
 pub trait LBMMeta {
     /// Get the shape of the simulation: `[HEIGHT, WIDTH]`
     fn shape(&self) -> [usize; 2];
@@ -22,32 +22,32 @@ pub trait LBMMeta {
     }
 }
 
-/// Config for [`LBM`]
+/// Config for [`LBMD2Q9State`]
 ///
 /// Implements [`LBMMeta`].
 #[derive(Config, Debug)]
-pub struct LBMConfig {
+pub struct LBMD2Q9Config {
     /// The shape of the simulation: `[HEIGHT, WIDTH]`
     pub shape: [usize; 2],
 }
 
-impl LBMMeta for LBMConfig {
+impl LBMMeta for LBMD2Q9Config {
     fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-impl LBMConfig {
-    /// Initialize a [`LBM`] module.
+impl LBMD2Q9Config {
+    /// Initialize a [`LBMD2Q9State`] module.
     pub fn init<B: Backend>(
         self,
         device: &B::Device,
-    ) -> LBM<B> {
+    ) -> LBMD2Q9State<B> {
         let [h, w] = self.shape;
         let state = Tensor::<B, 4>::zeros([h, w, 3, 3], device);
         let solid_mask = Tensor::<B, 2>::zeros([h, w], device).bool();
 
-        LBM {
+        LBMD2Q9State {
             step_count: 0,
             state,
             solid_mask,
@@ -57,7 +57,7 @@ impl LBMConfig {
 
 /// Lattice-Boltzmann Fluid Simulation State Module
 #[derive(Module, Debug)]
-pub struct LBM<B: Backend> {
+pub struct LBMD2Q9State<B: Backend> {
     /// The current simulation step.
     pub step_count: u64,
 
@@ -68,14 +68,14 @@ pub struct LBM<B: Backend> {
     pub solid_mask: Tensor<B, 2, Bool>,
 }
 
-impl<B: Backend> LBMMeta for LBM<B> {
+impl<B: Backend> LBMMeta for LBMD2Q9State<B> {
     fn shape(&self) -> [usize; 2] {
         let dims = &self.state.shape().dims;
         [dims[0], dims[1]]
     }
 }
 
-impl<B: Backend> LBM<B> {
+impl<B: Backend> LBMD2Q9State<B> {
     /// Get the device the module is on.
     pub fn device(&self) -> B::Device {
         self.state.device()
@@ -113,7 +113,7 @@ impl<B: Backend> LBM<B> {
 
 /// LBM Operations
 #[derive(Module, Debug)]
-pub struct LBMOperations<B: Backend> {
+pub struct LBMD2Q9Operations<B: Backend> {
     /// Vertical direction vectors in 3x3 layout.
     pub ey: Tensor<B, 2>,
 
@@ -126,50 +126,50 @@ pub struct LBMOperations<B: Backend> {
 
 /// Partials of the VU Equilibrium Operation.
 #[derive(Clone, Debug)]
-pub struct UCellPartials<B: Backend, const D: usize> {
-    /// `UY` unit vector bias; shape expanded to ``[..., UY, UX; D]``
-    pub ey: Tensor<B, D>,
+pub struct UCellPartials<B: Backend> {
+    /// `UY` unit vector bias; shape expanded to ``[H, W, UY, UX; D]``
+    pub ey: Tensor<B, 4>,
 
-    /// `UX` unit vector bias; shape expanded to ``[..., UY, UX; D]``
-    pub ex: Tensor<B, D>,
+    /// `UX` unit vector bias; shape expanded to ``[H, W, UY, UX; D]``
+    pub ex: Tensor<B, 4>,
 
-    /// `UYxUX` sum; shape expanded to ``[..., 1, 1; D]``
-    pub rho: Tensor<B, D>,
+    /// `UYxUX` sum; shape expanded to ``[H, W, 1, 1; D]``
+    pub rho: Tensor<B, 4>,
 
-    /// `UY` partial; shape expanded to ``[..., 1, 1; D]``
-    pub duy: Tensor<B, D>,
+    /// `UY` partial; shape expanded to ``[H, W, 1, 1; D]``
+    pub duy: Tensor<B, 4>,
 
-    /// `UX` partial; shape expanded to ``[..., 1, 1; D]``
-    pub dux: Tensor<B, D>,
+    /// `UX` partial; shape expanded to ``[H, W, 1, 1; D]``
+    pub dux: Tensor<B, 4>,
 }
 
 /// Final Terms of the VU Equilibrium Operation.
 #[derive(Clone, Debug)]
-pub struct UCellTerms<B: Backend, const D: usize> {
-    /// `UXU` sum; shape expanded to ``[..., 1, 1; D]``
-    pub rho: Tensor<B, D>,
+pub struct UCellTerms<B: Backend> {
+    /// `UXU` sum; shape expanded to ``[H, W, 1, 1; D]``
+    pub rho: Tensor<B, 4>,
 
     /// TODO
-    pub u_dot_e: Tensor<B, D>,
+    pub u_dot_e: Tensor<B, 4>,
 
     /// TODO
-    pub u_sq: Tensor<B, D>,
+    pub u_sq: Tensor<B, 4>,
 }
 
-impl<B: Backend, const D: usize> UCellPartials<B, D> {
+impl<B: Backend> UCellPartials<B> {
     /// Get the shape of the state.
     pub fn shape(&self) -> Shape {
         self.ey.shape()
     }
 
     /// Get the [`UCellTerms`] for these partials.
-    pub fn equi_terms(self) -> UCellTerms<B, D> {
+    pub fn equi_terms(self) -> UCellTerms<B> {
         let shape = self.shape();
 
-        let u_dot_e: Tensor<B, D> = (self.ey * self.duy.clone().expand(shape.clone()))
+        let u_dot_e: Tensor<B, 4> = (self.ey * self.duy.clone().expand(shape.clone()))
             + self.ex * self.dux.clone().expand(shape.clone());
 
-        let u_sq: Tensor<B, D> = self.duy.powi_scalar(2) + self.dux.powi_scalar(2);
+        let u_sq: Tensor<B, 4> = self.duy.powi_scalar(2) + self.dux.powi_scalar(2);
 
         UCellTerms {
             rho: self.rho,
@@ -179,7 +179,7 @@ impl<B: Backend, const D: usize> UCellPartials<B, D> {
     }
 }
 
-impl<B: Backend> LBMOperations<B> {
+impl<B: Backend> LBMD2Q9Operations<B> {
     /// Initialize LBM operations.
     pub fn init(device: &B::Device) -> Self {
         let ey = Tensor::<B, 2>::from_data(
@@ -218,12 +218,12 @@ impl<B: Backend> LBMOperations<B> {
     ///
     /// # Arguments
     ///
-    /// - `state`: LBM state tensor, with shape ``[..., UY, UX]`` over cell flow state.
+    /// - `state`: LBM state tensor, with shape ``[H, W, UY, UX]`` over cell flow state.
     ///
     /// # Returns
     ///
     /// The equilibrium tensor, with the same shape as `state`.
-    pub fn ucell_equilibrium(
+    pub fn equilibrium(
         &self,
         state: Tensor<B, 4>,
     ) -> Tensor<B, 4> {
@@ -245,20 +245,19 @@ impl<B: Backend> LBMOperations<B> {
     ///
     /// # Argument
     ///
-    /// - `state`: a rank ``D`` state with shape ``[..., UY, UX]``.
+    /// - `state`: a rank ``D`` state with shape ``[H, W, UY, UX]``.
     ///
     /// # Returns
     ///
     /// A rank ``D`` [`UCellPartials`].
-    pub fn ucell_partials<const D: usize>(
+    pub fn ucell_partials(
         &self,
-        state: Tensor<B, D>,
-    ) -> UCellPartials<B, D> {
+        state: Tensor<B, 4>,
+    ) -> UCellPartials<B> {
         let shape = state.shape();
-        assert!(D >= 2, "Rank must be at least 2: got {}", D);
 
-        let ex: Tensor<B, D> = self.ex.clone().expand(shape.clone());
-        let ey: Tensor<B, D> = self.ey.clone().expand(shape.clone());
+        let ex: Tensor<B, 4> = self.ex.clone().expand(shape.clone());
+        let ey: Tensor<B, 4> = self.ey.clone().expand(shape.clone());
 
         let rho = sum_cell_2d(state.clone());
         let duy = sum_cell_2d(state.clone() * ey.clone()).div(rho.clone());
@@ -287,9 +286,12 @@ impl<B: Backend> LBMOperations<B> {
         state: Tensor<B, 4>,
         tau: f32,
     ) -> Tensor<B, 4> {
-        let equi = self.ucell_equilibrium(state.clone());
-        let delta = equi - state.clone();
-        state + delta / tau
+        let equi = self.equilibrium(state.clone());
+        // s + (e - s) / t
+        // ( s t + e - s ) / t
+        // ( s t - s + e ) / t
+        // ( s (t - 1) + e ) / t
+        (state * (tau - 1.0) + equi) / tau
     }
 
     /// Compute the streaming updates for the non-border cells of a state.
@@ -447,36 +449,36 @@ mod tests {
         type B = Wgpu;
         let device = Default::default();
 
-        let ops: LBMOperations<B> = LBMOperations::init(&device);
+        let ops: LBMD2Q9Operations<B> = LBMD2Q9Operations::init(&device);
 
-        let input: Tensor<B, 3> = Tensor::from_data(
-            [
+        let input: Tensor<B, 4> = Tensor::from_data(
+            [[
                 [[1., 2., 3.], [4., 5., 6.], [7., 8., 9.]],
                 [[10., 20., 30.], [40., 50., 60.], [70., 80., 90.]],
-            ],
+            ]],
             &device,
         );
         let shape = input.shape();
 
-        let partials = ops.ucell_partials::<3>(input.clone());
+        let partials = ops.ucell_partials(input.clone());
 
         partials.ey.clone().to_data().assert_eq(
-            &Tensor::<B, 3>::from_data(
-                [
+            &Tensor::<B, 4>::from_data(
+                [[
                     [[1., 1., 1.], [0., 0., 0.], [-1., -1., -1.]],
                     [[1., 1., 1.], [0., 0., 0.], [-1., -1., -1.]],
-                ],
+                ]],
                 &device,
             )
             .to_data(),
             true,
         );
         partials.ex.clone().to_data().assert_eq(
-            &Tensor::<B, 3>::from_data(
-                [
+            &Tensor::<B, 4>::from_data(
+                [[
                     [[-1., 0., 1.], [-1., 0., 1.], [-1., 0., 1.]],
                     [[-1., 0., 1.], [-1., 0., 1.], [-1., 0., 1.]],
-                ],
+                ]],
                 &device,
             )
             .to_data(),
@@ -484,16 +486,16 @@ mod tests {
         );
 
         partials.rho.clone().to_data().assert_eq(
-            &Tensor::<B, 3>::from_data([[[45.]], [[450.]]], &device).to_data(),
+            &Tensor::<B, 4>::from_data([[[[45.]], [[450.]]]], &device).to_data(),
             true,
         );
 
         partials.duy.clone().to_data().assert_eq(
-            &Tensor::<B, 3>::from_data(
-                [
+            &Tensor::<B, 4>::from_data(
+                [[
                     [[((1. + 2. + 3.) - (7. + 8. + 9.)) / 45.]],
                     [[((10. + 20. + 30.) - (70. + 80. + 90.)) / 450.]],
-                ],
+                ]],
                 &device,
             )
             .to_data(),
@@ -501,11 +503,11 @@ mod tests {
         );
 
         partials.dux.clone().to_data().assert_eq(
-            &Tensor::<B, 3>::from_data(
-                [
+            &Tensor::<B, 4>::from_data(
+                [[
                     [[((3. + 6. + 9.) - (1. + 4. + 7.)) / 45.]],
                     [[((30. + 60. + 90.) - (10. + 40. + 70.)) / 450.]],
-                ],
+                ]],
                 &device,
             )
             .to_data(),
@@ -514,7 +516,7 @@ mod tests {
 
         let terms = partials.clone().equi_terms();
         terms.rho.clone().to_data().assert_eq(
-            &Tensor::<B, 3>::from_data([[[45.]], [[450.]]], &device).to_data(),
+            &Tensor::<B, 4>::from_data([[[[45.]], [[450.]]]], &device).to_data(),
             true,
         );
 
@@ -525,7 +527,7 @@ mod tests {
         let us_b = (((30. + 60. + 90.) - (10. + 40. + 70.)) / 450f32).powi(2);
 
         terms.u_sq.clone().to_data().assert_approx_eq::<f32>(
-            &Tensor::<B, 3>::from_data([[[vs_a + us_a]], [[vs_b + us_b]]], &device).to_data(),
+            &Tensor::<B, 4>::from_data([[[[vs_a + us_a]], [[vs_b + us_b]]]], &device).to_data(),
             Tolerance::default(),
         );
 
@@ -598,7 +600,7 @@ mod tests {
         ], &device);
         let solid_mask = Tensor::<B, 2>::zeros([3, 3], &device).bool();
 
-        let ops = LBMOperations::<B>::init(&device);
+        let ops = LBMD2Q9Operations::<B>::init(&device);
 
         let result = ops.interior_streaming_updates(state.clone(), solid_mask.clone());
 
@@ -618,10 +620,10 @@ mod tests {
         type B = Wgpu;
         let device = Default::default();
 
-        let config = LBMConfig::new([10, 12]);
+        let config = LBMD2Q9Config::new([10, 12]);
         assert_eq!(config.shape(), [10, 12]);
 
-        let lbm: LBM<B> = config.init(&device);
+        let lbm: LBMD2Q9State<B> = config.init(&device);
         assert_eq!(lbm.shape(), [10, 12]);
         assert_eq!(lbm.step_count(), 0);
         assert_eq!(lbm.device(), device);
@@ -633,10 +635,10 @@ mod tests {
         type B = Wgpu;
         let device = Default::default();
 
-        let ops = LBMOperations::<B>::init(&device);
+        let ops = LBMD2Q9Operations::<B>::init(&device);
 
         let state = Tensor::<B, 4>::random([1, 1, 3, 3], Distribution::Normal(0., 1.), &device);
-        let _eq = ops.ucell_equilibrium(state.clone());
+        let _eq = ops.equilibrium(state.clone());
         let _col = ops.collision(state.clone(), 0.5);
     }
 
@@ -645,7 +647,7 @@ mod tests {
         type B = Wgpu;
         let device = Default::default();
 
-        let ops = LBMOperations::<B>::init(&device);
+        let ops = LBMD2Q9Operations::<B>::init(&device);
 
         let state = Tensor::<B, 4>::random([10, 10, 3, 3], Distribution::Normal(0., 1.), &device);
         let solid_mask = Tensor::<B, 2>::zeros([10, 10], &device).bool();

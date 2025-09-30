@@ -2,15 +2,15 @@ use crate::color::ColorScheme;
 use burn::prelude::{Backend, s};
 use burn::tensor::DType::F32;
 use clockmill::simulations::surface::fluids::lattice_boltzmann::{
-    LBM, LBMMeta, LBMOperations, UCellTerms,
+    LBMD2Q9Operations, LBMD2Q9State, LBMMeta, UCellTerms,
 };
 use opengl_graphics::GlGraphics;
 use piston::{RenderArgs, UpdateArgs};
 
 pub struct FlowVisApp<B: Backend> {
     pub gl: GlGraphics, // OpenGL drawing backend.
-    pub world_state: LBM<B>,
-    pub ops: LBMOperations<B>,
+    pub world_state: LBMD2Q9State<B>,
+    pub ops: LBMD2Q9Operations<B>,
     pub _color_scheme: ColorScheme,
     pub step_rate: usize,
     pub opacity: f32,

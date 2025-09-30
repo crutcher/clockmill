@@ -1,6 +1,6 @@
 //! # Lattice-Boltzmann Fluid Simulation
 
-use bimm_contracts::assert_shape_contract_periodically;
+use bimm_contracts::{assert_shape_contract_periodically, unpack_shape_contract};
 use burn::Tensor;
 use burn::config::Config;
 use burn::module::Module;
@@ -305,19 +305,109 @@ impl<B: Backend> LBMD2Q9Operations<B> {
     /// # Returns
     ///
     /// The stream updates for the ``[1:-1, 1:-1, V=3, U=3]`` interior.
-    pub fn interior_streaming_updates(
+    pub fn interior_streaming(
         &self,
         state: Tensor<B, 4>,
-        solid_mask: Tensor<B, 2, Bool>,
+        _solid_mask: Tensor<B, 2, Bool>,
     ) -> Tensor<B, 4> {
-        streaming_window_op(
-            state
-                .unfold::<5, usize>(0, 3, 1)
-                .unfold::<6, usize>(1, 3, 1),
-            solid_mask
-                .unfold::<3, usize>(0, 3, 1)
-                .unfold::<4, usize>(1, 3, 1),
-        )
+        let [h, w] = unpack_shape_contract!(
+            ["H", "W", "UY", "UX"],
+            &state.shape().dims,
+            &["H", "W"],
+            &[("UY", 3), ("UX", 3)]
+        );
+
+        // Map the state into no-copy 3x3 neighborhood windows.
+        let state_windows = state
+            .unfold::<5, usize>(0, 3, 1)
+            .unfold::<6, usize>(1, 3, 1);
+
+        // TODO: implement bounce.
+        // This requires computing 3x3x2 columns;
+        // and using a where operation on the solid_mask:
+        // cell = where(mask_cell, bounce_cell, stream_cell)
+
+        assert_shape_contract_periodically!(
+            ["H" - "PAD", "W" - "PAD", "UY", "UX", "HK", "WK"],
+            &state_windows.shape().dims,
+            &[
+                ("H", h),
+                ("W", w),
+                ("PAD", 2),
+                ("UY", 3),
+                ("UX", 3),
+                ("HK", 3),
+                ("WK", 3)
+            ]
+        );
+
+        // Allocate a mutable selector over the windows.
+        let mut ranges: [Slice; 6] = (0..6)
+            .map(|_| Slice::new(0, None, 1))
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+
+        let mut rows = Vec::with_capacity(3);
+        for hk_idx in 0..3 {
+            // For each hk index, we have a row of 3 columns.
+
+            // Select the hk neighbor from the windows:
+            ranges[4] = Slice::new(hk_idx, Some(hk_idx + 1), 1);
+
+            // Select the complimentary vy flow in that neighbor.
+            let vy_source_idx = 2 - hk_idx;
+            ranges[2] = Slice::new(vy_source_idx, Some(vy_source_idx + 1), 1);
+
+            let mut columns = Vec::with_capacity(3);
+            for wk_idx in 0..3 {
+                // For each wk index, we have a column of 3 cells.
+
+                // Select the wk neighbor from the windows:
+                ranges[5] = Slice::new(wk_idx, Some(wk_idx + 1), 1);
+
+                // Select the complimentary vx flow in that neighbor.
+                let vx_source_idx = 2 - wk_idx;
+                ranges[3] = Slice::new(vx_source_idx, Some(vx_source_idx + 1), 1);
+
+                // `ranges` now contains a slice selector for one of the 9 cells:
+                // ranges = [.., .., vy_source_idx, vx_source_idx, h_win_idx, w_win_idx]
+                let cell = state_windows
+                    .clone()
+                    .slice(ranges.clone())
+                    .squeeze_dims::<4>(&[-2, -1]);
+
+                assert_shape_contract_periodically!(
+                    ["H" - "PAD", "W" - "PAD", "C", "C"],
+                    &cell.shape().dims,
+                    &[("H", h), ("W", w), ("PAD", 2), ("C", 1)]
+                );
+
+                // Collect the cell into the column vector.
+                columns.push(cell);
+            }
+            // Concatenate the 3 column cells into a row.
+            let row = Tensor::cat(columns, 3);
+
+            assert_shape_contract_periodically!(
+                ["H" - "PAD", "W" - "PAD", "C", "UX"],
+                &row.shape().dims,
+                &[("H", h), ("W", w), ("PAD", 2), ("C", 1), ("UX", 3)]
+            );
+
+            // Collect the row into the rows vector.
+            rows.push(row);
+        }
+        // Concatenate the 3 rows into a result.
+        let result = Tensor::cat(rows, 2);
+
+        assert_shape_contract_periodically!(
+            ["H" - "PAD", "W" - "PAD", "UY", "UX"],
+            &result.shape().dims,
+            &[("H", h), ("W", w), ("PAD", 2), ("UY", 3), ("UX", 3)]
+        );
+
+        result
     }
 }
 
@@ -332,102 +422,6 @@ impl<B: Backend> LBMD2Q9Operations<B> {
 /// A ``[..., 1, 1]`` result.
 pub fn sum_cell_2d<B: Backend, const D: usize>(state: Tensor<B, D>) -> Tensor<B, D> {
     state.sum_dim(D - 2).sum_dim(D - 1)
-}
-
-/// Lattice-Boltzmann Method Streaming Operation.
-///
-/// This operation applies the LBM streaming operation,
-/// swapping complementary direction pairs from neighboring cells.
-///
-/// # Example
-///
-/// Note: This is the ``[..., H=3, W=3, UY=3, UX=3]`` view;
-/// though the input is ``[..., UY=3, UX=3, H=3, W=3]``.
-///
-/// ### From
-///
-/// ```text
-/// | _, _, _ |; | _, _, _ |; | _, _, _ |
-/// | _, _, _ |; | _, _, _ |; | _, _, _ |
-/// | _, _, a |; | _, b, _ |; | c, _, _ |
-///
-/// | _, _, _ |; | _, _, _ |; | _, _, _ |
-/// | _, _, d |; | _, e, _ |; | f, _, _ |
-/// | _, _, _ |; | _, _, _ |; | _, _, _ |
-///
-/// | _, _, h |; | _, i, _ |; | j, _, _ |
-/// | _, _, _ |; | _, _, _ |; | _, _, _ |
-/// | _, _, _ |; | _, _, _ |; | _, _, _ |
-/// ```
-///
-/// ### To
-///
-/// ```text
-/// | a, b, c |
-/// | d, e, f |
-/// | h, i, j |
-/// ```
-pub fn streaming_window_op<B: Backend>(
-    state_windows: Tensor<B, 6>,
-    _mask_windows: Tensor<B, 4, Bool>,
-) -> Tensor<B, 4> {
-    // state: [H_WIN, W_WIN, UY=3, UX=3, H_KERN=3, W_KERN=3]
-    // output: [H_WIN, W_WIN, UY=3, UX=3]
-
-    let [h_windows, w_windows] = bimm_contracts::unpack_shape_contract!(
-        ["H_WINDOWS", "W_WINDOWS", "UY", "UX", "HK", "WK"],
-        &state_windows.shape().dims,
-        &["H_WINDOWS", "W_WINDOWS"],
-        &[("UY", 3), ("UX", 3), ("HK", 3), ("WK", 3)]
-    );
-
-    let mut ranges: [Slice; 6] = (0..6)
-        .map(|_| Slice::new(0, None, 1))
-        .collect::<Vec<_>>()
-        .try_into()
-        .unwrap();
-
-    let mut rows = Vec::with_capacity(3);
-    for hwin_idx in 0isize..3 {
-        ranges[6 - 2] = Slice::new(hwin_idx, Some(hwin_idx + 1), 1);
-
-        let vy_source_idx = 2 - hwin_idx;
-        ranges[6 - 4] = Slice::new(vy_source_idx, Some(vy_source_idx + 1), 1);
-
-        let mut columns = Vec::with_capacity(3);
-        for wwin_idx in 0isize..3 {
-            ranges[6 - 1] = Slice::new(wwin_idx, Some(wwin_idx + 1), 1);
-
-            let vx_source_idx = 2 - wwin_idx;
-            ranges[6 - 3] = Slice::new(vx_source_idx, Some(vx_source_idx + 1), 1);
-
-            // [.., .., `vy_source_idx`, `vx_source_idx`, `hwin_idx`, `wwin_idx`]
-            let slice = state_windows.clone().slice(ranges.clone());
-
-            // [.., .., `vy_source_idx`, `vx_source_idx`, `hwin_idx`, `wwin_idx`]
-            let slice = slice.squeeze_dims::<4>(&[-2, -1]);
-
-            columns.push(slice);
-        }
-        // Concatenate along U dimension
-        rows.push(Tensor::cat(columns, 4 - 1));
-    }
-
-    // Concatenate along V dimension
-    let result = Tensor::cat(rows, 4 - 2);
-
-    assert_shape_contract_periodically!(
-        ["H_WINDOWS", "W_WINDOWS", "UY", "UX"],
-        &result.shape().dims,
-        &[
-            ("H_WINDOWS", h_windows),
-            ("W_WINDOWS", w_windows),
-            ("UY", 3),
-            ("UX", 3),
-        ]
-    );
-
-    result
 }
 
 #[cfg(test)]
@@ -613,7 +607,7 @@ mod tests {
 
         let ops = LBMD2Q9Operations::<B>::init(&device);
 
-        let result = ops.interior_streaming_updates(state.clone(), solid_mask.clone());
+        let result = ops.interior_streaming(state.clone(), solid_mask.clone());
 
         assert_eq!(result.shape().dims, vec![1, 1, 3, 3]);
 
@@ -663,7 +657,7 @@ mod tests {
         let state = Tensor::<B, 4>::random([10, 10, 3, 3], Distribution::Normal(0., 1.), &device);
         let solid_mask = Tensor::<B, 2>::zeros([10, 10], &device).bool();
 
-        let updates = ops.interior_streaming_updates(state.clone(), solid_mask.clone());
+        let updates = ops.interior_streaming(state.clone(), solid_mask.clone());
         assert_eq!(updates.shape().dims(), [10 - 2, 10 - 2, 3, 3]);
     }
 }

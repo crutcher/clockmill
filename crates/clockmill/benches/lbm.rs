@@ -38,7 +38,7 @@ fn bench_lbm(c: &mut Criterion) {
 
         group.bench_function(format!("{:?} streaming", dtype).as_str(), |b| {
             b.iter(|| {
-                black_box(ops.interior_streaming_updates(state.clone(), solid_mask.clone()));
+                black_box(ops.interior_streaming(state.clone(), solid_mask.clone()));
             })
         });
     }

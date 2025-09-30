@@ -81,7 +81,7 @@ impl<B: Backend> FlowVisApp<B> {
             let state = self.ops.collision(state, tau);
             let interior = self
                 .ops
-                .interior_streaming_updates(state.clone(), self.world_state.solid_mask.clone());
+                .interior_streaming(state.clone(), self.world_state.solid_mask.clone());
             let state = state.slice_assign(s![1..-1, 1..-1, .., ..], interior);
 
             self.world_state.state = state;

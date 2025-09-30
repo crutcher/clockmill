@@ -223,16 +223,15 @@ impl<B: Backend> LBMOperations<B> {
     /// # Returns
     ///
     /// The equilibrium tensor, with the same shape as `state`.
-    pub fn ucell_equilibrium<const D: usize>(
+    pub fn ucell_equilibrium(
         &self,
-        state: Tensor<B, D>,
-    ) -> Tensor<B, D> {
+        state: Tensor<B, 4>,
+    ) -> Tensor<B, 4> {
         let shape = state.shape();
-        assert!(D >= 2, "Rank must be at least 2: got {}", D);
 
         let UCellTerms { rho, u_dot_e, u_sq } = self.ucell_partials(state).equi_terms();
 
-        let w: Tensor<B, D> = self.w.clone().expand::<D, _>(shape.clone());
+        let w: Tensor<B, 4> = self.w.clone().expand(shape.clone());
 
         w * rho
             * (1.0 + 3.0 * u_dot_e.clone() + 4.5 * u_dot_e.powi_scalar(2)
@@ -283,11 +282,11 @@ impl<B: Backend> LBMOperations<B> {
     /// # Returns
     ///
     /// The collision tensor, with the same shape as `state`.
-    pub fn collision<const D: usize>(
+    pub fn collision(
         &self,
-        state: Tensor<B, D>,
+        state: Tensor<B, 4>,
         tau: f32,
-    ) -> Tensor<B, D> {
+    ) -> Tensor<B, 4> {
         let equi = self.ucell_equilibrium(state.clone());
         let delta = equi - state.clone();
         state + delta / tau
@@ -651,8 +650,7 @@ mod tests {
 
         let ops = LBMOperations::<B>::init(&device);
 
-        let state =
-            Tensor::<B, 4>::random([10, 10, 3, 3], Distribution::Normal(0., 1.), &device);
+        let state = Tensor::<B, 4>::random([10, 10, 3, 3], Distribution::Normal(0., 1.), &device);
         let solid_mask = Tensor::<B, 2>::zeros([10, 10], &device).bool();
 
         let updates = ops.interior_streaming_updates(state.clone(), solid_mask.clone());

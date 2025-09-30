@@ -2,7 +2,7 @@ use burn::Tensor;
 use burn::backend::Cuda;
 use burn::tensor::DType::{F16, F32, F64};
 use burn::tensor::Distribution;
-use clockmill::simulations::surface::fluids::lattice_boltzman::LBMOperations;
+use clockmill::simulations::surface::fluids::lattice_boltzmann::LBMOperations;
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 

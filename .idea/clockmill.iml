@@ -6,6 +6,7 @@
       <sourceFolder url="file://$MODULE_DIR$/examples/conway_speedtest/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/clockmill/benches" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/crates/clockmill/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/examples/flowvis/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
       <excludeFolder url="file://$MODULE_DIR$/crates/clockmill/target" />
     </content>

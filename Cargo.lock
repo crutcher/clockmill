@@ -2481,6 +2481,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "flowvis"
+version = "0.0.0"
+dependencies = [
+ "burn",
+ "clap",
+ "clockmill",
+ "gl 0.14.0",
+ "piston",
+ "piston2d-graphics",
+ "piston2d-opengl_graphics",
+ "pistoncore-glutin_window",
+]
+
+[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"

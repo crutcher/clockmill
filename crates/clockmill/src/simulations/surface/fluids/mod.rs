@@ -1,3 +1,3 @@
 //! # 2D Fluids
 
-pub mod lattice_boltzman;
+pub mod lattice_boltzmann;

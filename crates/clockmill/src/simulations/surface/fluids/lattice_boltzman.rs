@@ -110,20 +110,20 @@ pub struct LBMOperations<B: Backend> {
 /// Partials of the VU Equilibrium Operation.
 #[derive(Clone, Debug)]
 pub struct VuEquiPartials<B: Backend, const D: usize> {
-    /// `V` field bias; shape expanded to ``[..., V, U; D]``
+    /// `Vy` unit vector bias; shape expanded to ``[..., Vy, Vx; D]``
     pub ev: Tensor<B, D>,
 
-    /// `U` field bias; shape expanded to ``[..., V, U; D]``
+    /// `Vx` unit vector bias; shape expanded to ``[..., Vy, Vx; D]``
     pub eu: Tensor<B, D>,
 
-    /// `VxU` sum; shape expanded to ``[..., 1, 1; D]``
+    /// `VyxVx` sum; shape expanded to ``[..., 1, 1; D]``
     pub rho: Tensor<B, D>,
 
-    /// `V` partial; shape expanded to ``[..., 1, 1; D]``
-    pub dv: Tensor<B, D>,
+    /// `Vy` partial; shape expanded to ``[..., 1, 1; D]``
+    pub dvy: Tensor<B, D>,
 
-    /// `U` partial; shape expanded to ``[..., 1, 1; D]``
-    pub du: Tensor<B, D>,
+    /// `Vx` partial; shape expanded to ``[..., 1, 1; D]``
+    pub dvx: Tensor<B, D>,
 }
 
 /// Final Terms of the VU Equilibrium Operation.
@@ -149,10 +149,10 @@ impl<B: Backend, const D: usize> VuEquiPartials<B, D> {
     pub fn equi_terms(self) -> VuEquiTerms<B, D> {
         let shape = self.shape();
 
-        let u_dot_e: Tensor<B, D> = (self.ev * self.dv.clone().expand(shape.clone()))
-            + self.eu * self.du.clone().expand(shape.clone());
+        let u_dot_e: Tensor<B, D> = (self.ev * self.dvy.clone().expand(shape.clone()))
+            + self.eu * self.dvx.clone().expand(shape.clone());
 
-        let u_sq: Tensor<B, D> = self.dv.powi_scalar(2) + self.du.powi_scalar(2);
+        let u_sq: Tensor<B, D> = self.dvy.powi_scalar(2) + self.dvx.powi_scalar(2);
 
         VuEquiTerms {
             rho: self.rho,
@@ -201,7 +201,7 @@ impl<B: Backend> LBMOperations<B> {
     ///
     /// # Arguments
     ///
-    /// - `state`: LBM state tensor, with shape ``[..., V, U]`` over cell flow state.
+    /// - `state`: LBM state tensor, with shape ``[..., Vy, Vx]`` over cell flow state.
     ///
     /// # Returns
     ///
@@ -229,7 +229,7 @@ impl<B: Backend> LBMOperations<B> {
     ///
     /// # Argument
     ///
-    /// - `state`: a rank ``D`` state with shape ``[..., V, U]``.
+    /// - `state`: a rank ``D`` state with shape ``[..., Vy, Vx]``.
     ///
     /// # Returns
     ///
@@ -244,16 +244,16 @@ impl<B: Backend> LBMOperations<B> {
         let eu: Tensor<B, D> = self.eu.clone().expand(shape.clone());
         let ev: Tensor<B, D> = self.ev.clone().expand(shape.clone());
 
-        let rho = vu_cell_sum(state.clone());
-        let dv = vu_cell_sum(state.clone() * ev.clone()).div(rho.clone());
-        let du = vu_cell_sum(state.clone() * eu.clone()).div(rho.clone());
+        let rho = sum_cell_2d(state.clone());
+        let dv = sum_cell_2d(state.clone() * ev.clone()).div(rho.clone());
+        let du = sum_cell_2d(state.clone() * eu.clone()).div(rho.clone());
 
         VuEquiPartials {
             ev,
             eu,
             rho,
-            dv,
-            du,
+            dvy: dv,
+            dvx: du,
         }
     }
 
@@ -261,7 +261,7 @@ impl<B: Backend> LBMOperations<B> {
     ///
     /// # Arguments
     ///
-    /// - `state`: LBM state tensor, with shape ``[..., V, U]`` over cell flow state.
+    /// - `state`: LBM state tensor, with shape ``[..., Vy, Vx]`` over cell flow state.
     ///
     /// # Returns
     ///
@@ -297,19 +297,17 @@ impl<B: Backend> LBMOperations<B> {
     }
 }
 
-/// Calculate the total energy in a ``[..., V, U]`` cell.
+/// Sums a ``[..., A, B]`` cell.
 ///
 /// # Arguments
 ///
-/// - `state`: a ``[..., V, U]`` input.
+/// - `state`: a ``[..., A, B]`` input.
 ///
 /// # Returns
 ///
 /// A ``[..., 1, 1]`` result.
-pub fn vu_cell_sum<B: Backend, const D: usize>(state: Tensor<B, D>) -> Tensor<B, D> {
-    let y_dim = D - 2;
-    let x_dim = D - 1;
-    state.sum_dim(y_dim).sum_dim(x_dim)
+pub fn sum_cell_2d<B: Backend, const D: usize>(state: Tensor<B, D>) -> Tensor<B, D> {
+    state.sum_dim(D - 2).sum_dim(D - 1)
 }
 
 /// Lattice-Boltzmann Method Streaming Operation.
@@ -319,8 +317,8 @@ pub fn vu_cell_sum<B: Backend, const D: usize>(state: Tensor<B, D>) -> Tensor<B,
 ///
 /// # Example
 ///
-/// Note: This is the ``[..., H=3, W=3, V=3, U=3]`` view;
-/// though the input is ``[..., V=3, U=3, H=3, W=3]``.
+/// Note: This is the ``[..., H=3, W=3, Vy=3, Vx=3]`` view;
+/// though the input is ``[..., Vy=3, Vx=3, H=3, W=3]``.
 ///
 /// ### From
 ///
@@ -348,16 +346,16 @@ pub fn vu_cell_sum<B: Backend, const D: usize>(state: Tensor<B, D>) -> Tensor<B,
 pub fn streaming_window_op<B: Backend, const D: usize, const D2: usize>(
     state: Tensor<B, D>
 ) -> Tensor<B, D2> {
-    // state: [..., V=3, U=3, H_KERN=3, W_KERN=3]
-    // output: [..., V=3, U=3]
+    // state: [..., Vy=3, Vx=3, H_KERN=3, W_KERN=3]
+    // output: [..., Vy=3, Vx=3]
 
     assert_eq!(D - 2, D2, "D ({D}) - 2 must equal D2 ({D2})");
 
     #[cfg(debug_assertions)]
     bimm_contracts::assert_shape_contract_periodically!(
-        [..., "V", "U", "H_KERN", "W_KERN"],
+        [..., "Vy", "Vx", "HK", "WK"],
         &state.shape().dims,
-        &[("V", 3), ("U", 3), ("H_KERN", 3), ("W_KERN", 3)]
+        &[("Vy", 3), ("Vx", 3), ("HK", 3), ("WK", 3)]
     );
 
     let mut ranges: [Slice; D] = (0..D)
@@ -368,19 +366,19 @@ pub fn streaming_window_op<B: Backend, const D: usize, const D2: usize>(
 
     let mut rows = Vec::with_capacity(3);
     for h_idx in 0isize..3 {
-        let target_v = h_idx;
-        let source_v = 2 - h_idx;
+        let target_vy = h_idx;
+        let source_vy = 2 - h_idx;
 
-        ranges[D - 4] = Slice::new(source_v, Some(source_v + 1), 1);
-        ranges[D - 2] = Slice::new(target_v, Some(target_v + 1), 1);
+        ranges[D - 4] = Slice::new(source_vy, Some(source_vy + 1), 1);
+        ranges[D - 2] = Slice::new(target_vy, Some(target_vy + 1), 1);
 
         let mut columns = Vec::with_capacity(3);
         for w_idx in 0isize..3 {
-            let target_u = w_idx;
-            let source_u = 2 - w_idx;
+            let target_vx = w_idx;
+            let source_vx = 2 - w_idx;
 
-            ranges[D - 3] = Slice::new(source_u, Some(source_u + 1), 1);
-            ranges[D - 1] = Slice::new(target_u, Some(target_u + 1), 1);
+            ranges[D - 3] = Slice::new(source_vx, Some(source_vx + 1), 1);
+            ranges[D - 1] = Slice::new(target_vx, Some(target_vx + 1), 1);
 
             let column = state
                 .clone()
@@ -415,7 +413,7 @@ mod tests {
             &device,
         );
 
-        let result = vu_cell_sum::<Wgpu, 3>(input.clone());
+        let result = sum_cell_2d::<Wgpu, 3>(input.clone());
 
         let expected: Tensor<Wgpu, 3> = Tensor::from_data([[[45.]], [[450.]]], &device);
         result.to_data().assert_eq(&expected.to_data(), true);
@@ -467,7 +465,7 @@ mod tests {
             true,
         );
 
-        partials.dv.clone().to_data().assert_eq(
+        partials.dvy.clone().to_data().assert_eq(
             &Tensor::<B, 3>::from_data(
                 [
                     [[((1. + 2. + 3.) - (7. + 8. + 9.)) / 45.]],
@@ -479,7 +477,7 @@ mod tests {
             true,
         );
 
-        partials.du.clone().to_data().assert_eq(
+        partials.dvx.clone().to_data().assert_eq(
             &Tensor::<B, 3>::from_data(
                 [
                     [[((3. + 6. + 9.) - (1. + 4. + 7.)) / 45.]],
@@ -509,8 +507,8 @@ mod tests {
         );
 
         terms.u_dot_e.clone().to_data().assert_approx_eq::<f32>(
-            &(partials.ev.clone() * partials.dv.clone().expand(shape.clone())
-                + partials.eu.clone() * partials.du.clone().expand(shape))
+            &(partials.ev.clone() * partials.dvy.clone().expand(shape.clone())
+                + partials.eu.clone() * partials.dvx.clone().expand(shape))
             .to_data(),
             Tolerance::default(),
         );

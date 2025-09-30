@@ -7,6 +7,8 @@ use burn::module::Module;
 use burn::prelude::{Backend, Bool, Shape};
 use burn::tensor::{DType, Slice};
 
+use crate::compat::operations::sum_dims;
+
 /// Introspection trait for [`LBMD2Q9State`]
 pub trait LBMMeta {
     /// Get the shape of the simulation: `[HEIGHT, WIDTH]`
@@ -50,7 +52,7 @@ impl LBMD2Q9Config {
 
         LBMD2Q9State {
             step_count: 0,
-            state,
+            velocity: state,
             solid_mask,
         }
     }
@@ -62,8 +64,10 @@ pub struct LBMD2Q9State<B: Backend> {
     /// The current simulation step.
     pub step_count: u64,
 
-    /// The world state: ``[H, W, UY, UX]``
-    pub state: Tensor<B, 4>,
+    /// The grid velocity: ``[H, W, UY=3, UX=3]``
+    /// Here the 0-9 velocity terms are unfolded
+    /// into the ``UY`` and ``UX`` dims.
+    pub velocity: Tensor<B, 4>,
 
     /// The solid mask: ``[H, W]``
     pub solid_mask: Tensor<B, 2, Bool>,
@@ -71,7 +75,7 @@ pub struct LBMD2Q9State<B: Backend> {
 
 impl<B: Backend> LBMMeta for LBMD2Q9State<B> {
     fn shape(&self) -> [usize; 2] {
-        let dims = &self.state.shape().dims;
+        let dims = &self.velocity.shape().dims;
         [dims[0], dims[1]]
     }
 }
@@ -79,7 +83,7 @@ impl<B: Backend> LBMMeta for LBMD2Q9State<B> {
 impl<B: Backend> LBMD2Q9State<B> {
     /// Get the device the module is on.
     pub fn device(&self) -> B::Device {
-        self.state.device()
+        self.velocity.device()
     }
 
     /// Get the current simulation step count.
@@ -88,12 +92,12 @@ impl<B: Backend> LBMD2Q9State<B> {
     }
 
     /// Recast the datatype of the state.
-    pub fn cast(
+    pub fn to_dtype(
         self,
         dtype: DType,
     ) -> Self {
         Self {
-            state: self.state.cast(dtype),
+            velocity: self.velocity.cast(dtype),
             ..self
         }
     }
@@ -127,27 +131,50 @@ pub struct LBMD2Q9Operations<B: Backend> {
 
 /// Partials of the VU Equilibrium Operation.
 #[derive(Clone, Debug)]
-pub struct UCellPartials<B: Backend> {
-    /// `UY` unit vector bias; shape expanded to ``[H, W, UY, UX; D]``
+pub struct EquilibriumPartials<B: Backend> {
+    /// `UY` unit vector bias; broadcast to ``[H, W, UY=3, UX=3]``
     pub ey: Tensor<B, 4>,
 
-    /// `UX` unit vector bias; shape expanded to ``[H, W, UY, UX; D]``
+    /// `UX` unit vector bias; broadcast to ``[H, W, UY=3, UX=3]``
     pub ex: Tensor<B, 4>,
 
-    /// `UYxUX` sum; shape expanded to ``[H, W, 1, 1; D]``
+    /// The grid density, broadcast to ``[H, W, 1, 1]``
     pub rho: Tensor<B, 4>,
 
-    /// `UY` partial; shape expanded to ``[H, W, 1, 1; D]``
+    /// `UY` partial; broadcast to ``[H, W, 1, 1]``
     pub duy: Tensor<B, 4>,
 
-    /// `UX` partial; shape expanded to ``[H, W, 1, 1; D]``
+    /// `UX` partial; broadcast to ``[H, W, 1, 1]``
     pub dux: Tensor<B, 4>,
+}
+
+impl<B: Backend> EquilibriumPartials<B> {
+    /// Get the shape of the state.
+    pub fn shape(&self) -> Shape {
+        self.ey.shape()
+    }
+
+    /// Get the [`EquilibriumTerms`] for these partials.
+    pub fn equi_terms(self) -> EquilibriumTerms<B> {
+        let shape = self.shape();
+
+        let u_dot_e: Tensor<B, 4> = (self.ey * self.duy.clone().expand(shape.clone()))
+            + self.ex * self.dux.clone().expand(shape.clone());
+
+        let u_sq: Tensor<B, 4> = self.duy.powi_scalar(2) + self.dux.powi_scalar(2);
+
+        EquilibriumTerms {
+            rho: self.rho,
+            u_dot_e,
+            u_sq,
+        }
+    }
 }
 
 /// Final Terms of the VU Equilibrium Operation.
 #[derive(Clone, Debug)]
-pub struct UCellTerms<B: Backend> {
-    /// `UXU` sum; shape expanded to ``[H, W, 1, 1; D]``
+pub struct EquilibriumTerms<B: Backend> {
+    /// The grid density, broadcast to ``[H, W, 1, 1]``
     pub rho: Tensor<B, 4>,
 
     /// TODO
@@ -157,28 +184,6 @@ pub struct UCellTerms<B: Backend> {
     pub u_sq: Tensor<B, 4>,
 }
 
-impl<B: Backend> UCellPartials<B> {
-    /// Get the shape of the state.
-    pub fn shape(&self) -> Shape {
-        self.ey.shape()
-    }
-
-    /// Get the [`UCellTerms`] for these partials.
-    pub fn equi_terms(self) -> UCellTerms<B> {
-        let shape = self.shape();
-
-        let u_dot_e: Tensor<B, 4> = (self.ey * self.duy.clone().expand(shape.clone()))
-            + self.ex * self.dux.clone().expand(shape.clone());
-
-        let u_sq: Tensor<B, 4> = self.duy.powi_scalar(2) + self.dux.powi_scalar(2);
-
-        UCellTerms {
-            rho: self.rho,
-            u_dot_e,
-            u_sq,
-        }
-    }
-}
 
 impl<B: Backend> LBMD2Q9Operations<B> {
     /// Initialize LBM operations.
@@ -203,8 +208,8 @@ impl<B: Backend> LBMD2Q9Operations<B> {
         Self { ey, ex, w }
     }
 
-    /// Cast the operations to the given dtype.
-    pub fn cast(
+    /// Re-cast to the given dtype.
+    pub fn to_dtype(
         self,
         dtype: DType,
     ) -> Self {
@@ -219,18 +224,18 @@ impl<B: Backend> LBMD2Q9Operations<B> {
     ///
     /// # Arguments
     ///
-    /// - `state`: LBM state tensor, with shape ``[H, W, UY, UX]`` over cell flow state.
+    /// - `velocity`: with shape ``[H, W, UY=3, UX=3]``.
     ///
     /// # Returns
     ///
-    /// The equilibrium tensor, with the same shape as `state`.
+    /// The velocity equilibrium, with the same shape.
     pub fn equilibrium(
         &self,
-        state: Tensor<B, 4>,
+        velocity: Tensor<B, 4>,
     ) -> Tensor<B, 4> {
-        let shape = state.shape();
+        let shape = velocity.shape();
 
-        let UCellTerms { rho, u_dot_e, u_sq } = self.ucell_partials(state).equi_terms();
+        let EquilibriumTerms { rho, u_dot_e, u_sq } = self.ucell_partials(velocity).equi_terms();
 
         let w: Tensor<B, 4> = self.w.clone().expand(shape.clone());
 
@@ -246,25 +251,30 @@ impl<B: Backend> LBMD2Q9Operations<B> {
     ///
     /// # Argument
     ///
-    /// - `state`: a rank ``D`` state with shape ``[H, W, UY, UX]``.
+    /// - `velocity`: with shape ``[H, W, UY=3, UX=3]``.
     ///
     /// # Returns
     ///
-    /// A rank ``D`` [`UCellPartials`].
+    /// A rank ``D`` [`EquilibriumPartials`].
     pub fn ucell_partials(
         &self,
-        state: Tensor<B, 4>,
-    ) -> UCellPartials<B> {
-        let shape = state.shape();
+        velocity: Tensor<B, 4>,
+    ) -> EquilibriumPartials<B> {
+        let shape = velocity.shape();
 
         let ex: Tensor<B, 4> = self.ex.clone().expand(shape.clone());
         let ey: Tensor<B, 4> = self.ey.clone().expand(shape.clone());
 
-        let rho = sum_cell_2d(state.clone());
-        let duy = sum_cell_2d(state.clone() * ey.clone()).div(rho.clone());
-        let dux = sum_cell_2d(state.clone() * ex.clone()).div(rho.clone());
+        // The grid density, broadcast to ``[H, W, 1, 1]``
+        let state = velocity.clone();
+        let rho = sum_dims(state, &[ - 2, - 1]);
 
-        UCellPartials {
+        let state = velocity.clone() * ey.clone();
+        let duy = sum_dims(state, &[- 2, - 1]).div(rho.clone());
+        let state = velocity.clone() * ex.clone();
+        let dux = sum_dims(state, &[- 2, - 1]).div(rho.clone());
+
+        EquilibriumPartials {
             ey,
             ex,
             rho,
@@ -277,48 +287,48 @@ impl<B: Backend> LBMD2Q9Operations<B> {
     ///
     /// # Arguments
     ///
-    /// - `state`: LBM state tensor, with shape ``[..., UY, UX]`` over cell flow state.
+    /// - `velocity`: with shape ``[H, W, UY, UX]``
     ///
     /// # Returns
     ///
-    /// The collision tensor, with the same shape as `state`.
+    /// The updated velocity tensor.
     pub fn collision(
         &self,
-        state: Tensor<B, 4>,
+        velocity: Tensor<B, 4>,
         tau: f32,
     ) -> Tensor<B, 4> {
-        let equi = self.equilibrium(state.clone());
+        let equi = self.equilibrium(velocity.clone());
         // s + (e - s) / t
         // ( s t + e - s ) / t
         // ( s t - s + e ) / t
         // ( s (t - 1) + e ) / t
-        (state * (tau - 1.0) + equi) / tau
+        (velocity * (tau - 1.0) + equi) / tau
     }
 
     /// Compute the streaming updates for the non-border cells of a state.
     ///
     /// # Arguments
     ///
-    /// - `state`: a ``[H, W, V=3, U=3]`` input.
+    /// - `velocity`: a ``[H, W, V=3, U=3]`` input.
     /// - `solid_mask`: a ``[H, W]`` solid mask.
     ///
     /// # Returns
     ///
-    /// The stream updates for the ``[1:-1, 1:-1, V=3, U=3]`` interior.
+    /// The updated velocity for the ``[1:-1, 1:-1, V=3, U=3]`` interior.
     pub fn interior_streaming(
         &self,
-        state: Tensor<B, 4>,
+        velocity: Tensor<B, 4>,
         _solid_mask: Tensor<B, 2, Bool>,
     ) -> Tensor<B, 4> {
         let [h, w] = unpack_shape_contract!(
             ["H", "W", "UY", "UX"],
-            &state.shape().dims,
+            &velocity.shape().dims,
             &["H", "W"],
             &[("UY", 3), ("UX", 3)]
         );
 
         // Map the state into no-copy 3x3 neighborhood windows.
-        let state_windows = state
+        let velocity_windows = velocity
             .unfold::<5, usize>(0, 3, 1)
             .unfold::<6, usize>(1, 3, 1);
 
@@ -329,7 +339,7 @@ impl<B: Backend> LBMD2Q9Operations<B> {
 
         assert_shape_contract_periodically!(
             ["H" - "PAD", "W" - "PAD", "UY", "UX", "HK", "WK"],
-            &state_windows.shape().dims,
+            &velocity_windows.shape().dims,
             &[
                 ("H", h),
                 ("W", w),
@@ -372,7 +382,7 @@ impl<B: Backend> LBMD2Q9Operations<B> {
 
                 // `ranges` now contains a slice selector for one of the 9 cells:
                 // ranges = [.., .., vy_source_idx, vx_source_idx, h_win_idx, w_win_idx]
-                let cell = state_windows
+                let cell = velocity_windows
                     .clone()
                     .slice(ranges.clone())
                     .squeeze_dims::<4>(&[-2, -1]);
@@ -411,19 +421,6 @@ impl<B: Backend> LBMD2Q9Operations<B> {
     }
 }
 
-/// Sums a ``[..., A, B]`` cell.
-///
-/// # Arguments
-///
-/// - `state`: a ``[..., A, B]`` input.
-///
-/// # Returns
-///
-/// A ``[..., 1, 1]`` result.
-pub fn sum_cell_2d<B: Backend, const D: usize>(state: Tensor<B, D>) -> Tensor<B, D> {
-    state.sum_dim(D - 2).sum_dim(D - 1)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -443,7 +440,8 @@ mod tests {
             &device,
         );
 
-        let result = sum_cell_2d::<B, 3>(input.clone());
+        let state = input.clone();
+        let result = sum_dims(state, &[- 2, - 1]);
 
         let expected: Tensor<B, 3> = Tensor::from_data([[[45.]], [[450.]]], &device);
         result.to_data().assert_eq(&expected.to_data(), true);
@@ -632,7 +630,7 @@ mod tests {
         assert_eq!(lbm.shape(), [10, 12]);
         assert_eq!(lbm.step_count(), 0);
         assert_eq!(lbm.device(), device);
-        assert_eq!(lbm.state.shape().dims(), [10, 12, 3, 3]);
+        assert_eq!(lbm.velocity.shape().dims(), [10, 12, 3, 3]);
     }
 
     #[test]

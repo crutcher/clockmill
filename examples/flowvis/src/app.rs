@@ -2,7 +2,7 @@ use crate::color::ColorScheme;
 use burn::prelude::{Backend, s};
 use burn::tensor::DType::F32;
 use clockmill::simulations::surface::fluids::lattice_boltzmann::{
-    LBMD2Q9Operations, LBMD2Q9State, LBMMeta, UCellTerms,
+    LBMD2Q9Operations, LBMD2Q9State, LBMMeta, EquilibriumTerms,
 };
 use opengl_graphics::GlGraphics;
 use piston::{RenderArgs, UpdateArgs};
@@ -24,9 +24,9 @@ impl<B: Backend> FlowVisApp<B> {
         use graphics::*;
 
         let world_state = &self.world_state;
-        let UCellTerms { u_sq, .. } = self
+        let EquilibriumTerms { u_sq, .. } = self
             .ops
-            .ucell_partials(world_state.state.clone())
+            .ucell_partials(world_state.velocity.clone())
             .equi_terms();
 
         let u = u_sq.sqrt().squeeze_dims::<2>(&[2, 3]);
@@ -75,7 +75,7 @@ impl<B: Backend> FlowVisApp<B> {
         for _ in 0..self.step_rate {
             let state = self
                 .world_state
-                .state
+                .velocity
                 .clone()
                 .slice_fill(s![0..20, 0, .., 2], 0.5);
             let state = self.ops.collision(state, tau);
@@ -84,7 +84,7 @@ impl<B: Backend> FlowVisApp<B> {
                 .interior_streaming(state.clone(), self.world_state.solid_mask.clone());
             let state = state.slice_assign(s![1..-1, 1..-1, .., ..], interior);
 
-            self.world_state.state = state;
+            self.world_state.velocity = state;
         }
     }
 }

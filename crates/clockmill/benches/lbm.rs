@@ -22,7 +22,7 @@ fn bench_lbm(c: &mut Criterion) {
             Tensor::<B, 4>::random([n, n, 3, 3], Distribution::Normal(0., 1.), &device).cast(dtype);
         let solid_mask = Tensor::<B, 2>::zeros([n, n], &device).bool();
 
-        let ops = LBMD2Q9Operations::<B>::init(&device).cast(dtype);
+        let ops = LBMD2Q9Operations::<B>::init(&device).to_dtype(dtype);
 
         group.bench_function(format!("{:?} equilibrium", dtype).as_str(), |b| {
             b.iter(|| {

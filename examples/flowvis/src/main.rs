@@ -1,5 +1,5 @@
 use app::FlowVisApp;
-use burn::prelude::{Backend};
+use burn::prelude::Backend;
 use clap::Parser;
 use clockmill::simulations::surface::fluids::lattice_boltzmann::{LBM, LBMConfig, LBMOperations};
 use color::ColorScheme;

@@ -410,11 +410,11 @@ pub fn streaming_window_op<B: Backend, const D: usize, const D2: usize>(
             columns.push(column);
         }
         // Concatenate along U dimension
-        rows.push(Tensor::cat(columns, D - 3));
+        rows.push(Tensor::cat(columns, D2 - 1));
     }
 
     // Concatenate along V dimension
-    Tensor::cat(rows, D - 4)
+    Tensor::cat(rows, D2 - 2)
 }
 
 #[cfg(test)]
@@ -539,11 +539,11 @@ mod tests {
 
     #[test]
     #[rustfmt::skip]
-    fn test_streaming_window_op() {
+    fn test_interior_streaming_updates() {
         type B = Wgpu;
         let device = Default::default();
 
-        let window: Tensor<B, 4> = Tensor::from_data([
+        let state: Tensor<B, 4> = Tensor::from_data([
             [
                 [
                     [0., 1., 2.],
@@ -596,23 +596,19 @@ mod tests {
                 ],
             ],
         ], &device);
-        let window = window.permute([2, 3, 0, 1]).unsqueeze();
+        let solid_mask = Tensor::<B, 2>::zeros([3, 3], &device).bool();
 
-        let solid_mask = Tensor::<B, 3>::zeros([1, 3, 3], &device).bool();
+        let ops = LBMOperations::<B>::init(&device);
 
-        // println!("{:?}", window.shape());
+        let result = ops.interior_streaming_updates(state.clone(), solid_mask.clone());
 
-        let result: Tensor<B, 3> = streaming_window_op::<B, 5, 3>(window.clone(), solid_mask.clone());
-        assert_eq!(result.shape().dims, vec![1, 3, 3]);
+        assert_eq!(result.shape().dims, vec![1, 1, 3, 3]);
 
-        let expected: Tensor<B, 3> = Tensor::from_data([[
+        let expected: Tensor<B, 4> = Tensor::from_data([[[
             [8., 16., 24.],
             [32., 40., 48.],
             [56., 64., 72.],
-        ]], &device);
-
-        // println!("result: {:#?}", result.to_data().as_slice::<f32>());
-        // println!("expected: {:#?}", expected.to_data().as_slice::<f32>());
+        ]]], &device);
 
         result.to_data().assert_eq(&expected.to_data(), false);
     }
@@ -634,11 +630,12 @@ mod tests {
 
     #[test]
     fn test_equilibrium() {
+        type B = Wgpu;
         let device = Default::default();
 
-        let ops = LBMOperations::<Wgpu>::init(&device);
+        let ops = LBMOperations::<B>::init(&device);
 
-        let state = Tensor::<Wgpu, 3>::random([1, 3, 3], Distribution::Normal(0., 1.), &device);
+        let state = Tensor::<B, 4>::random([1, 1, 3, 3], Distribution::Normal(0., 1.), &device);
         let _eq = ops.ucell_equilibrium(state.clone());
         let _col = ops.collision(state.clone(), 0.5);
     }

@@ -1,5 +1,5 @@
 use crate::color::ColorScheme;
-use burn::prelude::{s, Backend};
+use burn::prelude::{Backend, s};
 use burn::tensor::DType::F32;
 use clockmill::simulations::surface::fluids::lattice_boltzmann::{
     LBM, LBMMeta, LBMOperations, UCellTerms,
@@ -71,12 +71,17 @@ impl<B: Backend> FlowVisApp<B> {
     }
 
     pub fn advance_frame(&mut self) {
-        let tau = 1.0;
+        let tau = 0.55;
         for _ in 0..self.step_rate {
-            let state = self.world_state.state.clone()
-                .slice_fill(s![0..20, 0, .., 2], 1.0);
+            let state = self
+                .world_state
+                .state
+                .clone()
+                .slice_fill(s![0..20, 0, .., 2], 0.5);
             let state = self.ops.collision(state, tau);
-            let interior = self.ops.interior_streaming_updates(state.clone(), self.world_state.solid_mask.clone());
+            let interior = self
+                .ops
+                .interior_streaming_updates(state.clone(), self.world_state.solid_mask.clone());
             let state = state.slice_assign(s![1..-1, 1..-1, .., ..], interior);
 
             self.world_state.state = state;

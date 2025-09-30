@@ -3,7 +3,7 @@
 use burn::Tensor;
 use burn::config::Config;
 use burn::module::Module;
-use burn::prelude::{Backend, Shape};
+use burn::prelude::{Backend, Bool, Shape};
 use burn::tensor::{DType, Slice};
 
 /// Introspection trait for [`LBM`]
@@ -43,11 +43,14 @@ impl LBMConfig {
         self,
         device: &B::Device,
     ) -> LBM<B> {
-        let state = Tensor::<B, 4>::zeros([self.shape[0], self.shape[1], 3, 3], device);
+        let [h, w] = self.shape;
+        let state = Tensor::<B, 4>::zeros([h, w, 3, 3], device);
+        let solid_mask = Tensor::<B, 2>::zeros([h, w], device).bool();
 
         LBM {
             step_count: 0,
             state,
+            solid_mask,
         }
     }
 }
@@ -60,6 +63,9 @@ pub struct LBM<B: Backend> {
 
     /// The world state: ``[H, W, UY, UX]``
     pub state: Tensor<B, 4>,
+
+    /// The solid mask: ``[H, W]``
+    pub solid_mask: Tensor<B, 2, Bool>,
 }
 
 impl<B: Backend> LBMMeta for LBM<B> {
@@ -292,6 +298,7 @@ impl<B: Backend> LBMOperations<B> {
     /// # Arguments
     ///
     /// - `state`: a ``[H, W, V=3, U=3]`` input.
+    /// - `solid_mask`: a ``[H, W]`` solid mask.
     ///
     /// # Returns
     ///
@@ -299,11 +306,15 @@ impl<B: Backend> LBMOperations<B> {
     pub fn interior_streaming_updates(
         &self,
         state: Tensor<B, 4>,
+        solid_mask: Tensor<B, 2, Bool>,
     ) -> Tensor<B, 4> {
         streaming_window_op(
             state
                 .unfold::<5, usize>(0, 3, 1)
                 .unfold::<6, usize>(1, 3, 1),
+            solid_mask
+                .unfold::<3, usize>(0, 3, 1)
+                .unfold::<4, usize>(1, 3, 1),
         )
     }
 }
@@ -355,7 +366,8 @@ pub fn sum_cell_2d<B: Backend, const D: usize>(state: Tensor<B, D>) -> Tensor<B,
 /// | h, i, j |
 /// ```
 pub fn streaming_window_op<B: Backend, const D: usize, const D2: usize>(
-    state: Tensor<B, D>
+    state: Tensor<B, D>,
+    _solid_mask: Tensor<B, D2, Bool>,
 ) -> Tensor<B, D2> {
     // state: [..., UY=3, UX=3, H_KERN=3, W_KERN=3]
     // output: [..., UY=3, UX=3]
@@ -414,9 +426,10 @@ mod tests {
 
     #[test]
     fn test_expand_vu_cell_sum() {
+        type B = Wgpu;
         let device = Default::default();
 
-        let input: Tensor<Wgpu, 3> = Tensor::from_data(
+        let input: Tensor<B, 3> = Tensor::from_data(
             [
                 [[1., 2., 3.], [4., 5., 6.], [7., 8., 9.]],
                 [[10., 20., 30.], [40., 50., 60.], [70., 80., 90.]],
@@ -424,9 +437,9 @@ mod tests {
             &device,
         );
 
-        let result = sum_cell_2d::<Wgpu, 3>(input.clone());
+        let result = sum_cell_2d::<B, 3>(input.clone());
 
-        let expected: Tensor<Wgpu, 3> = Tensor::from_data([[[45.]], [[450.]]], &device);
+        let expected: Tensor<B, 3> = Tensor::from_data([[[45.]], [[450.]]], &device);
         result.to_data().assert_eq(&expected.to_data(), true);
     }
 
@@ -586,9 +599,11 @@ mod tests {
         ], &device);
         let window = window.permute([2, 3, 0, 1]).unsqueeze();
 
+        let solid_mask = Tensor::<B, 3>::zeros([1, 3, 3], &device).bool();
+
         // println!("{:?}", window.shape());
 
-        let result: Tensor<B, 3> = streaming_window_op::<B, 5, 3>(window.clone());
+        let result: Tensor<B, 3> = streaming_window_op::<B, 5, 3>(window.clone(), solid_mask.clone());
         assert_eq!(result.shape().dims, vec![1, 3, 3]);
 
         let expected: Tensor<B, 3> = Tensor::from_data([[
@@ -605,12 +620,13 @@ mod tests {
 
     #[test]
     fn test_lbm_init() {
+        type B = Wgpu;
         let device = Default::default();
 
         let config = LBMConfig::new([10, 12]);
         assert_eq!(config.shape(), [10, 12]);
 
-        let lbm: LBM<Wgpu> = config.init(&device);
+        let lbm: LBM<B> = config.init(&device);
         assert_eq!(lbm.shape(), [10, 12]);
         assert_eq!(lbm.step_count(), 0);
         assert_eq!(lbm.device(), device);
@@ -630,14 +646,16 @@ mod tests {
 
     #[test]
     fn test_streaming_updates() {
+        type B = Wgpu;
         let device = Default::default();
 
-        let ops = LBMOperations::<Wgpu>::init(&device);
+        let ops = LBMOperations::<B>::init(&device);
 
         let state =
-            Tensor::<Wgpu, 4>::random([10, 10, 3, 3], Distribution::Normal(0., 1.), &device);
+            Tensor::<B, 4>::random([10, 10, 3, 3], Distribution::Normal(0., 1.), &device);
+        let solid_mask = Tensor::<B, 2>::zeros([10, 10], &device).bool();
 
-        let updates = ops.interior_streaming_updates(state.clone());
+        let updates = ops.interior_streaming_updates(state.clone(), solid_mask.clone());
         assert_eq!(updates.shape().dims(), [10 - 2, 10 - 2, 3, 3]);
     }
 }

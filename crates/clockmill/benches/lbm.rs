@@ -19,6 +19,8 @@ fn bench_lbm(c: &mut Criterion) {
     for dtype in [F16, F32, F64] {
         let state =
             Tensor::<B, 4>::random([n, n, 3, 3], Distribution::Normal(0., 1.), &device).cast(dtype);
+        let solid_mask = Tensor::<B, 2>::zeros([n, n], &device).bool();
+
         let ops = LBMOperations::<B>::init(&device).cast(dtype);
 
         group.bench_function(format!("equilibrium: {n}x{n}, {:?}", dtype).as_str(), |b| {
@@ -31,7 +33,7 @@ fn bench_lbm(c: &mut Criterion) {
             format!("interior stream: {n}x{n}, {:?}", dtype).as_str(),
             |b| {
                 b.iter(|| {
-                    black_box(ops.interior_streaming_updates(state.clone()));
+                    black_box(ops.interior_streaming_updates(state.clone(), solid_mask.clone()));
                 })
             },
         );

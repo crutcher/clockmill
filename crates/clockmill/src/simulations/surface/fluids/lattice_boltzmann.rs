@@ -1,5 +1,6 @@
 //! # Lattice-Boltzmann Fluid Simulation
 
+use bimm_contracts::assert_shape_contract_periodically;
 use burn::Tensor;
 use burn::config::Config;
 use burn::module::Module;
@@ -366,57 +367,67 @@ pub fn sum_cell_2d<B: Backend, const D: usize>(state: Tensor<B, D>) -> Tensor<B,
 /// | d, e, f |
 /// | h, i, j |
 /// ```
-pub fn streaming_window_op<B: Backend, const D: usize, const D2: usize>(
-    state: Tensor<B, D>,
-    _solid_mask: Tensor<B, D2, Bool>,
-) -> Tensor<B, D2> {
-    // state: [..., UY=3, UX=3, H_KERN=3, W_KERN=3]
-    // output: [..., UY=3, UX=3]
+pub fn streaming_window_op<B: Backend>(
+    state_windows: Tensor<B, 6>,
+    _mask_windows: Tensor<B, 4, Bool>,
+) -> Tensor<B, 4> {
+    // state: [H_WIN, W_WIN, UY=3, UX=3, H_KERN=3, W_KERN=3]
+    // output: [H_WIN, W_WIN, UY=3, UX=3]
 
-    assert_eq!(D - 2, D2, "D ({D}) - 2 must equal D2 ({D2})");
-
-    #[cfg(debug_assertions)]
-    bimm_contracts::assert_shape_contract_periodically!(
-        [..., "UY", "UX", "HK", "WK"],
-        &state.shape().dims,
+    let [h_windows, w_windows] = bimm_contracts::unpack_shape_contract!(
+        ["H_WINDOWS", "W_WINDOWS", "UY", "UX", "HK", "WK"],
+        &state_windows.shape().dims,
+        &["H_WINDOWS", "W_WINDOWS"],
         &[("UY", 3), ("UX", 3), ("HK", 3), ("WK", 3)]
     );
 
-    let mut ranges: [Slice; D] = (0..D)
+    let mut ranges: [Slice; 6] = (0..6)
         .map(|_| Slice::new(0, None, 1))
         .collect::<Vec<_>>()
         .try_into()
         .unwrap();
 
     let mut rows = Vec::with_capacity(3);
-    for h_idx in 0isize..3 {
-        let target_vy = h_idx;
-        let source_vy = 2 - h_idx;
+    for hwin_idx in 0isize..3 {
+        ranges[6 - 2] = Slice::new(hwin_idx, Some(hwin_idx + 1), 1);
 
-        ranges[D - 4] = Slice::new(source_vy, Some(source_vy + 1), 1);
-        ranges[D - 2] = Slice::new(target_vy, Some(target_vy + 1), 1);
+        let vy_source_idx = 2 - hwin_idx;
+        ranges[6 - 4] = Slice::new(vy_source_idx, Some(vy_source_idx + 1), 1);
 
         let mut columns = Vec::with_capacity(3);
-        for w_idx in 0isize..3 {
-            let target_vx = w_idx;
-            let source_vx = 2 - w_idx;
+        for wwin_idx in 0isize..3 {
+            ranges[6 - 1] = Slice::new(wwin_idx, Some(wwin_idx + 1), 1);
 
-            ranges[D - 3] = Slice::new(source_vx, Some(source_vx + 1), 1);
-            ranges[D - 1] = Slice::new(target_vx, Some(target_vx + 1), 1);
+            let vx_source_idx = 2 - wwin_idx;
+            ranges[6 - 3] = Slice::new(vx_source_idx, Some(vx_source_idx + 1), 1);
 
-            let column = state
-                .clone()
-                .slice(ranges.clone())
-                .squeeze_dims::<D2>(&[-2, -1]);
+            // [.., .., `vy_source_idx`, `vx_source_idx`, `hwin_idx`, `wwin_idx`]
+            let slice = state_windows.clone().slice(ranges.clone());
 
-            columns.push(column);
+            // [.., .., `vy_source_idx`, `vx_source_idx`, `hwin_idx`, `wwin_idx`]
+            let slice = slice.squeeze_dims::<4>(&[-2, -1]);
+
+            columns.push(slice);
         }
         // Concatenate along U dimension
-        rows.push(Tensor::cat(columns, D2 - 1));
+        rows.push(Tensor::cat(columns, 4 - 1));
     }
 
     // Concatenate along V dimension
-    Tensor::cat(rows, D2 - 2)
+    let result = Tensor::cat(rows, 4 - 2);
+
+    assert_shape_contract_periodically!(
+        ["H_WINDOWS", "W_WINDOWS", "UY", "UX"],
+        &result.shape().dims,
+        &[
+            ("H_WINDOWS", h_windows),
+            ("W_WINDOWS", w_windows),
+            ("UY", 3),
+            ("UX", 3),
+        ]
+    );
+
+    result
 }
 
 #[cfg(test)]

@@ -58,7 +58,7 @@ pub struct LBM<B: Backend> {
     /// The current simulation step.
     pub step_count: u64,
 
-    /// The world state: ``[H, W, V, U]``
+    /// The world state: ``[H, W, UY, UX]``
     pub state: Tensor<B, 4>,
 }
 
@@ -98,10 +98,10 @@ impl<B: Backend> LBM<B> {
 #[derive(Module, Debug)]
 pub struct LBMOperations<B: Backend> {
     /// Vertical direction vectors in 3x3 layout.
-    pub ev: Tensor<B, 2>,
+    pub ey: Tensor<B, 2>,
 
     /// Horizontal direction vectors in 3x3 layout.
-    pub eu: Tensor<B, 2>,
+    pub ex: Tensor<B, 2>,
 
     /// Weights in 3x3 layout.
     pub w: Tensor<B, 2>,
@@ -109,27 +109,27 @@ pub struct LBMOperations<B: Backend> {
 
 /// Partials of the VU Equilibrium Operation.
 #[derive(Clone, Debug)]
-pub struct VuEquiPartials<B: Backend, const D: usize> {
-    /// `Vy` unit vector bias; shape expanded to ``[..., Vy, Vx; D]``
-    pub ev: Tensor<B, D>,
+pub struct UCellPartials<B: Backend, const D: usize> {
+    /// `UY` unit vector bias; shape expanded to ``[..., UY, UX; D]``
+    pub ey: Tensor<B, D>,
 
-    /// `Vx` unit vector bias; shape expanded to ``[..., Vy, Vx; D]``
-    pub eu: Tensor<B, D>,
+    /// `UX` unit vector bias; shape expanded to ``[..., UY, UX; D]``
+    pub ex: Tensor<B, D>,
 
-    /// `VyxVx` sum; shape expanded to ``[..., 1, 1; D]``
+    /// `UYxUX` sum; shape expanded to ``[..., 1, 1; D]``
     pub rho: Tensor<B, D>,
 
-    /// `Vy` partial; shape expanded to ``[..., 1, 1; D]``
-    pub dvy: Tensor<B, D>,
+    /// `UY` partial; shape expanded to ``[..., 1, 1; D]``
+    pub duy: Tensor<B, D>,
 
-    /// `Vx` partial; shape expanded to ``[..., 1, 1; D]``
-    pub dvx: Tensor<B, D>,
+    /// `UX` partial; shape expanded to ``[..., 1, 1; D]``
+    pub dux: Tensor<B, D>,
 }
 
 /// Final Terms of the VU Equilibrium Operation.
 #[derive(Clone, Debug)]
-pub struct VuEquiTerms<B: Backend, const D: usize> {
-    /// `VxU` sum; shape expanded to ``[..., 1, 1; D]``
+pub struct UCellTerms<B: Backend, const D: usize> {
+    /// `UXU` sum; shape expanded to ``[..., 1, 1; D]``
     pub rho: Tensor<B, D>,
 
     /// TODO
@@ -139,22 +139,22 @@ pub struct VuEquiTerms<B: Backend, const D: usize> {
     pub u_sq: Tensor<B, D>,
 }
 
-impl<B: Backend, const D: usize> VuEquiPartials<B, D> {
+impl<B: Backend, const D: usize> UCellPartials<B, D> {
     /// Get the shape of the state.
     pub fn shape(&self) -> Shape {
-        self.ev.shape()
+        self.ey.shape()
     }
 
-    /// Get the [`VuEquiTerms`] for these partials.
-    pub fn equi_terms(self) -> VuEquiTerms<B, D> {
+    /// Get the [`UCellTerms`] for these partials.
+    pub fn equi_terms(self) -> UCellTerms<B, D> {
         let shape = self.shape();
 
-        let u_dot_e: Tensor<B, D> = (self.ev * self.dvy.clone().expand(shape.clone()))
-            + self.eu * self.dvx.clone().expand(shape.clone());
+        let u_dot_e: Tensor<B, D> = (self.ey * self.duy.clone().expand(shape.clone()))
+            + self.ex * self.dux.clone().expand(shape.clone());
 
-        let u_sq: Tensor<B, D> = self.dvy.powi_scalar(2) + self.dvx.powi_scalar(2);
+        let u_sq: Tensor<B, D> = self.duy.powi_scalar(2) + self.dux.powi_scalar(2);
 
-        VuEquiTerms {
+        UCellTerms {
             rho: self.rho,
             u_dot_e,
             u_sq,
@@ -165,11 +165,11 @@ impl<B: Backend, const D: usize> VuEquiPartials<B, D> {
 impl<B: Backend> LBMOperations<B> {
     /// Initialize LBM operations.
     pub fn init(device: &B::Device) -> Self {
-        let ev = Tensor::<B, 2>::from_data(
+        let ey = Tensor::<B, 2>::from_data(
             [[1.0, 1.0, 1.0], [0.0, 0.0, 0.0], [-1.0, -1.0, -1.0]],
             device,
         );
-        let eu = Tensor::<B, 2>::from_data(
+        let ex = Tensor::<B, 2>::from_data(
             [[-1.0, 0.0, 1.0], [-1.0, 0.0, 1.0], [-1.0, 0.0, 1.0]],
             device,
         );
@@ -182,7 +182,7 @@ impl<B: Backend> LBMOperations<B> {
             device,
         );
 
-        Self { ev, eu, w }
+        Self { ey, ex, w }
     }
 
     /// Cast the operations to the given dtype.
@@ -191,8 +191,8 @@ impl<B: Backend> LBMOperations<B> {
         dtype: DType,
     ) -> Self {
         Self {
-            ev: self.ev.cast(dtype),
-            eu: self.eu.cast(dtype),
+            ey: self.ey.cast(dtype),
+            ex: self.ex.cast(dtype),
             w: self.w.cast(dtype),
         }
     }
@@ -201,19 +201,19 @@ impl<B: Backend> LBMOperations<B> {
     ///
     /// # Arguments
     ///
-    /// - `state`: LBM state tensor, with shape ``[..., Vy, Vx]`` over cell flow state.
+    /// - `state`: LBM state tensor, with shape ``[..., UY, UX]`` over cell flow state.
     ///
     /// # Returns
     ///
     /// The equilibrium tensor, with the same shape as `state`.
-    pub fn vu_cell_equilibrium<const D: usize>(
+    pub fn ucell_equilibrium<const D: usize>(
         &self,
         state: Tensor<B, D>,
     ) -> Tensor<B, D> {
         let shape = state.shape();
         assert!(D >= 2, "Rank must be at least 2: got {}", D);
 
-        let VuEquiTerms { rho, u_dot_e, u_sq } = self.vu_equi_partials(state).equi_terms();
+        let UCellTerms { rho, u_dot_e, u_sq } = self.ucell_partials(state).equi_terms();
 
         let w: Tensor<B, D> = self.w.clone().expand::<D, _>(shape.clone());
 
@@ -229,31 +229,31 @@ impl<B: Backend> LBMOperations<B> {
     ///
     /// # Argument
     ///
-    /// - `state`: a rank ``D`` state with shape ``[..., Vy, Vx]``.
+    /// - `state`: a rank ``D`` state with shape ``[..., UY, UX]``.
     ///
     /// # Returns
     ///
-    /// A rank ``D`` [`VuEquiPartials`].
-    pub fn vu_equi_partials<const D: usize>(
+    /// A rank ``D`` [`UCellPartials`].
+    pub fn ucell_partials<const D: usize>(
         &self,
         state: Tensor<B, D>,
-    ) -> VuEquiPartials<B, D> {
+    ) -> UCellPartials<B, D> {
         let shape = state.shape();
         assert!(D >= 2, "Rank must be at least 2: got {}", D);
 
-        let eu: Tensor<B, D> = self.eu.clone().expand(shape.clone());
-        let ev: Tensor<B, D> = self.ev.clone().expand(shape.clone());
+        let ex: Tensor<B, D> = self.ex.clone().expand(shape.clone());
+        let ey: Tensor<B, D> = self.ey.clone().expand(shape.clone());
 
         let rho = sum_cell_2d(state.clone());
-        let dv = sum_cell_2d(state.clone() * ev.clone()).div(rho.clone());
-        let du = sum_cell_2d(state.clone() * eu.clone()).div(rho.clone());
+        let duy = sum_cell_2d(state.clone() * ey.clone()).div(rho.clone());
+        let dux = sum_cell_2d(state.clone() * ex.clone()).div(rho.clone());
 
-        VuEquiPartials {
-            ev,
-            eu,
+        UCellPartials {
+            ey,
+            ex,
             rho,
-            dvy: dv,
-            dvx: du,
+            duy,
+            dux,
         }
     }
 
@@ -261,7 +261,7 @@ impl<B: Backend> LBMOperations<B> {
     ///
     /// # Arguments
     ///
-    /// - `state`: LBM state tensor, with shape ``[..., Vy, Vx]`` over cell flow state.
+    /// - `state`: LBM state tensor, with shape ``[..., UY, UX]`` over cell flow state.
     ///
     /// # Returns
     ///
@@ -271,7 +271,7 @@ impl<B: Backend> LBMOperations<B> {
         state: Tensor<B, D>,
         tau: f32,
     ) -> Tensor<B, D> {
-        let equi = self.vu_cell_equilibrium(state.clone());
+        let equi = self.ucell_equilibrium(state.clone());
         let delta = equi - state.clone();
         state + delta / tau
     }
@@ -317,8 +317,8 @@ pub fn sum_cell_2d<B: Backend, const D: usize>(state: Tensor<B, D>) -> Tensor<B,
 ///
 /// # Example
 ///
-/// Note: This is the ``[..., H=3, W=3, Vy=3, Vx=3]`` view;
-/// though the input is ``[..., Vy=3, Vx=3, H=3, W=3]``.
+/// Note: This is the ``[..., H=3, W=3, UY=3, UX=3]`` view;
+/// though the input is ``[..., UY=3, UX=3, H=3, W=3]``.
 ///
 /// ### From
 ///
@@ -346,16 +346,16 @@ pub fn sum_cell_2d<B: Backend, const D: usize>(state: Tensor<B, D>) -> Tensor<B,
 pub fn streaming_window_op<B: Backend, const D: usize, const D2: usize>(
     state: Tensor<B, D>
 ) -> Tensor<B, D2> {
-    // state: [..., Vy=3, Vx=3, H_KERN=3, W_KERN=3]
-    // output: [..., Vy=3, Vx=3]
+    // state: [..., UY=3, UX=3, H_KERN=3, W_KERN=3]
+    // output: [..., UY=3, UX=3]
 
     assert_eq!(D - 2, D2, "D ({D}) - 2 must equal D2 ({D2})");
 
     #[cfg(debug_assertions)]
     bimm_contracts::assert_shape_contract_periodically!(
-        [..., "Vy", "Vx", "HK", "WK"],
+        [..., "UY", "UX", "HK", "WK"],
         &state.shape().dims,
-        &[("Vy", 3), ("Vx", 3), ("HK", 3), ("WK", 3)]
+        &[("UY", 3), ("UX", 3), ("HK", 3), ("WK", 3)]
     );
 
     let mut ranges: [Slice; D] = (0..D)
@@ -435,9 +435,9 @@ mod tests {
         );
         let shape = input.shape();
 
-        let partials = ops.vu_equi_partials::<3>(input.clone());
+        let partials = ops.ucell_partials::<3>(input.clone());
 
-        partials.ev.clone().to_data().assert_eq(
+        partials.ey.clone().to_data().assert_eq(
             &Tensor::<B, 3>::from_data(
                 [
                     [[1., 1., 1.], [0., 0., 0.], [-1., -1., -1.]],
@@ -448,7 +448,7 @@ mod tests {
             .to_data(),
             true,
         );
-        partials.eu.clone().to_data().assert_eq(
+        partials.ex.clone().to_data().assert_eq(
             &Tensor::<B, 3>::from_data(
                 [
                     [[-1., 0., 1.], [-1., 0., 1.], [-1., 0., 1.]],
@@ -465,7 +465,7 @@ mod tests {
             true,
         );
 
-        partials.dvy.clone().to_data().assert_eq(
+        partials.duy.clone().to_data().assert_eq(
             &Tensor::<B, 3>::from_data(
                 [
                     [[((1. + 2. + 3.) - (7. + 8. + 9.)) / 45.]],
@@ -477,7 +477,7 @@ mod tests {
             true,
         );
 
-        partials.dvx.clone().to_data().assert_eq(
+        partials.dux.clone().to_data().assert_eq(
             &Tensor::<B, 3>::from_data(
                 [
                     [[((3. + 6. + 9.) - (1. + 4. + 7.)) / 45.]],
@@ -507,8 +507,8 @@ mod tests {
         );
 
         terms.u_dot_e.clone().to_data().assert_approx_eq::<f32>(
-            &(partials.ev.clone() * partials.dvy.clone().expand(shape.clone())
-                + partials.eu.clone() * partials.dvx.clone().expand(shape))
+            &(partials.ey.clone() * partials.duy.clone().expand(shape.clone())
+                + partials.ex.clone() * partials.dux.clone().expand(shape))
             .to_data(),
             Tolerance::default(),
         );
@@ -613,7 +613,7 @@ mod tests {
         let ops = LBMOperations::<Wgpu>::init(&device);
 
         let state = Tensor::<Wgpu, 3>::random([1, 3, 3], Distribution::Normal(0., 1.), &device);
-        let _eq = ops.vu_cell_equilibrium(state.clone());
+        let _eq = ops.ucell_equilibrium(state.clone());
         let _col = ops.collision(state.clone(), 0.5);
     }
 

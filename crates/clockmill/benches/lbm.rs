@@ -23,7 +23,7 @@ fn bench_lbm(c: &mut Criterion) {
 
         group.bench_function(format!("equilibrium: {n}x{n}, {:?}", dtype).as_str(), |b| {
             b.iter(|| {
-                black_box(ops.vu_cell_equilibrium(state.clone()));
+                black_box(ops.ucell_equilibrium(state.clone()));
             })
         });
 

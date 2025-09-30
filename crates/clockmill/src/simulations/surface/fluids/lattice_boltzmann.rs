@@ -244,6 +244,14 @@ impl<B: Backend> LBMD2Q9Operations<B> {
                 - 1.5 * u_sq.expand(shape))
     }
 
+    /// placeholder.
+    pub fn density(
+        &self,
+        velocity: Tensor<B, 4>,
+    ) -> Tensor<B, 4> {
+        sum_dims(velocity, &[2, 3])
+    }
+
     /// Compute the directional VU cell partials.
     ///
     /// These are intermediate sums used in computing equilibrium flow;
@@ -266,8 +274,7 @@ impl<B: Backend> LBMD2Q9Operations<B> {
         let ey: Tensor<B, 4> = self.ey.clone().expand(shape.clone());
 
         // The grid density, broadcast to ``[H, W, 1, 1]``
-        let state = velocity.clone();
-        let rho = sum_dims(state, &[ - 2, - 1]);
+        let rho = self.density(velocity.clone()).expand(shape.clone());
 
         let state = velocity.clone() * ey.clone();
         let duy = sum_dims(state, &[- 2, - 1]).div(rho.clone());

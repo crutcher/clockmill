@@ -80,6 +80,17 @@ impl<B: Backend> LBM<B> {
         self.step_count
     }
 
+    /// Recast the datatype of the state.
+    pub fn cast(
+        self,
+        dtype: DType,
+    ) -> Self {
+        Self {
+            state: self.state.cast(dtype),
+            ..self
+        }
+    }
+
     /// Set the current simulation step count.
     pub fn set_step_count(
         &mut self,

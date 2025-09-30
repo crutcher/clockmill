@@ -35,6 +35,8 @@ indicatif = "^0.18.0"
 
 clap = "^4.5.47"
 
+criterion = { version = "^0.7.0" }
+
 piston = "^1.0.0"
 piston2d-graphics = "^0.45.0"
 pistoncore-glutin_window = "^0.72.0"

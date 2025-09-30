@@ -4,7 +4,7 @@ use burn::Tensor;
 use burn::config::Config;
 use burn::module::Module;
 use burn::prelude::{Backend, Shape};
-use burn::tensor::Slice;
+use burn::tensor::{DType, Slice};
 
 /// Introspection trait for [`LBM`]
 pub trait LBMMeta {
@@ -183,6 +183,18 @@ impl<B: Backend> LBMOperations<B> {
         );
 
         Self { ev, eu, w }
+    }
+
+    /// Cast the operations to the given dtype.
+    pub fn cast(
+        self,
+        dtype: DType,
+    ) -> Self {
+        Self {
+            ev: self.ev.cast(dtype),
+            eu: self.eu.cast(dtype),
+            w: self.w.cast(dtype),
+        }
     }
 
     /// LBM Cellular Equilibrium.

@@ -73,7 +73,9 @@ impl<B: Backend> FlowVisApp<B> {
     pub fn advance_frame(&mut self) {
         let tau = 1.0;
         for _ in 0..self.step_rate {
-            let state = self.ops.collision(self.world_state.state.clone(), tau);
+            let state = self.world_state.state.clone()
+                .slice_fill(s![0..20, 0, .., 2], 1.0);
+            let state = self.ops.collision(state, tau);
             let interior = self.ops.interior_streaming_updates(state.clone(), self.world_state.solid_mask.clone());
             let state = state.slice_assign(s![1..-1, 1..-1, .., ..], interior);
 

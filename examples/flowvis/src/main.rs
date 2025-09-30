@@ -1,5 +1,5 @@
 use app::FlowVisApp;
-use burn::prelude::{s, Backend};
+use burn::prelude::{Backend};
 use clap::Parser;
 use clockmill::simulations::surface::fluids::lattice_boltzmann::{LBM, LBMConfig, LBMOperations};
 use color::ColorScheme;
@@ -90,10 +90,7 @@ fn main() {
 fn run<B: Backend>(args: &Args) {
     let device = Default::default();
 
-    let mut world_state: LBM<B> = LBMConfig::new(args.grid_shape).init(&device);
-    world_state.state =
-        world_state.state.clone()
-        .slice_fill(s![0..20, 0, 1, 2], 1.0);
+    let world_state: LBM<B> = LBMConfig::new(args.grid_shape).init(&device);
 
     // Change this to OpenGL::V2_1 if not working.
     let opengl = OpenGL::V3_2;

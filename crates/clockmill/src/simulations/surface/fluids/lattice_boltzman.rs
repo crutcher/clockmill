@@ -268,11 +268,11 @@ impl<B: Backend> LBMOperations<B> {
     ///
     /// # Arguments
     ///
-    /// - `state`: a ``[H, W, V, U]`` input.
+    /// - `state`: a ``[H, W, V=3, U=3]`` input.
     ///
     /// # Returns
     ///
-    /// The stream updates for the ``[1:-1, 1:-1, V, U]`` interior.
+    /// The stream updates for the ``[1:-1, 1:-1, V=3, U=3]`` interior.
     pub fn interior_streaming_updates(
         &self,
         state: Tensor<B, 4>,
@@ -285,11 +285,11 @@ impl<B: Backend> LBMOperations<B> {
     }
 }
 
-/// Calculate the total energy in a ``[..., V=3, U=3]`` cell.
+/// Calculate the total energy in a ``[..., V, U]`` cell.
 ///
 /// # Arguments
 ///
-/// - `state`: a ``[..., V=3, U=3]`` input.
+/// - `state`: a ``[..., V, U]`` input.
 ///
 /// # Returns
 ///

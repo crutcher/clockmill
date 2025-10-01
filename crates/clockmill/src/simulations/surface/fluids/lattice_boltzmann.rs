@@ -428,7 +428,7 @@ impl<B: Backend> LBMD2Q9Operations<B> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use burn::backend::{Wgpu};
+    use burn::backend::Wgpu;
     use burn::tensor::{Distribution, Tolerance};
 
     #[test]

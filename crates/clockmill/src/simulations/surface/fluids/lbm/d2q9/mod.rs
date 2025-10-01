@@ -1,8 +1,9 @@
 //! # D2Q9 Lattice-Boltzmann Fluid Simulation
 
+use crate::compat::operations::sum_dims;
 use bimm_contracts::{assert_shape_contract_periodically, unpack_shape_contract};
-use burn::prelude::{Backend, Bool};
 use burn::Tensor;
+use burn::prelude::{Backend, Bool};
 use burn::tensor::Slice;
 
 /// Population Density
@@ -15,10 +16,7 @@ use burn::tensor::Slice;
 ///
 /// A ``[H, W]`` population density.
 pub fn population_density<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 2> {
-    dist.clone()
-        .sum_dim(2)
-        .sum_dim(3)
-        .squeeze_dims::<2>(&[2, 3])
+    sum_dims(dist, &[2, 3]).squeeze_dims::<2>(&[2, 3])
 }
 
 /// D2Q9 Direction Vectors
@@ -69,12 +67,12 @@ pub fn macroscopic_momentum<B: Backend>(
     dist: Tensor<B, 4>,
     e: Tensor<B, 3>,
 ) -> Tensor<B, 3> {
-    dist.clone()
-        .unsqueeze_dims::<5>(&[-1])
-        .mul(e.clone().unsqueeze::<5>())
-        .sum_dim(2)
-        .sum_dim(3)
-        .squeeze_dims::<3>(&[2, 3])
+    sum_dims(
+        dist.unsqueeze_dims::<5>(&[-1])
+            .mul(e.clone().unsqueeze::<5>()),
+        &[2, 3],
+    )
+    .squeeze_dims::<3>(&[2, 3])
 }
 
 /// Computes directional velocity from macroscopic momentum.
@@ -225,7 +223,6 @@ pub fn bgk_collision<B: Backend>(
     dist.clone() + (dist_eq - dist) * param.as_omega()
 }
 
-
 /// Apply the streaming update step to the non-border cells of a population.
 ///
 /// # Arguments
@@ -241,16 +238,14 @@ pub fn stream_distribution_interior<B: Backend>(
     _solid_mask: Tensor<B, 2, Bool>,
 ) -> Tensor<B, 4> {
     let [h, w] = unpack_shape_contract!(
-            ["H", "W", "UY", "UX"],
-            &dist.shape().dims,
-            &["H", "W"],
-            &[("UY", 3), ("UX", 3)]
-        );
+        ["H", "W", "UY", "UX"],
+        &dist.shape().dims,
+        &["H", "W"],
+        &[("UY", 3), ("UX", 3)]
+    );
 
     // Map the state into no-copy 3x3 neighborhood windows.
-    let dist_windows = dist
-        .unfold::<5, usize>(0, 3, 1)
-        .unfold::<6, usize>(1, 3, 1);
+    let dist_windows = dist.unfold::<5, usize>(0, 3, 1).unfold::<6, usize>(1, 3, 1);
 
     // TODO: implement bounce.
     // This requires computing 3x3x2 columns;
@@ -258,18 +253,18 @@ pub fn stream_distribution_interior<B: Backend>(
     // cell = where(mask_cell, bounce_cell, stream_cell)
 
     assert_shape_contract_periodically!(
-            ["H" - "PAD", "W" - "PAD", "UY", "UX", "HK", "WK"],
-            &dist_windows.shape().dims,
-            &[
-                ("H", h),
-                ("W", w),
-                ("PAD", 2),
-                ("UY", 3),
-                ("UX", 3),
-                ("HK", 3),
-                ("WK", 3)
-            ]
-        );
+        ["H" - "PAD", "W" - "PAD", "UY", "UX", "HK", "WK"],
+        &dist_windows.shape().dims,
+        &[
+            ("H", h),
+            ("W", w),
+            ("PAD", 2),
+            ("UY", 3),
+            ("UX", 3),
+            ("HK", 3),
+            ("WK", 3)
+        ]
+    );
 
     // Allocate a mutable selector over the windows.
     let mut ranges: [Slice; 6] = (0..6)
@@ -308,10 +303,10 @@ pub fn stream_distribution_interior<B: Backend>(
                 .squeeze_dims::<4>(&[-2, -1]);
 
             assert_shape_contract_periodically!(
-                    ["H" - "PAD", "W" - "PAD", "C", "C"],
-                    &cell.shape().dims,
-                    &[("H", h), ("W", w), ("PAD", 2), ("C", 1)]
-                );
+                ["H" - "PAD", "W" - "PAD", "C", "C"],
+                &cell.shape().dims,
+                &[("H", h), ("W", w), ("PAD", 2), ("C", 1)]
+            );
 
             // Collect the cell into the column vector.
             columns.push(cell);
@@ -320,10 +315,10 @@ pub fn stream_distribution_interior<B: Backend>(
         let row = Tensor::cat(columns, 3);
 
         assert_shape_contract_periodically!(
-                ["H" - "PAD", "W" - "PAD", "C", "UX"],
-                &row.shape().dims,
-                &[("H", h), ("W", w), ("PAD", 2), ("C", 1), ("UX", 3)]
-            );
+            ["H" - "PAD", "W" - "PAD", "C", "UX"],
+            &row.shape().dims,
+            &[("H", h), ("W", w), ("PAD", 2), ("C", 1), ("UX", 3)]
+        );
 
         // Collect the row into the rows vector.
         rows.push(row);
@@ -332,10 +327,10 @@ pub fn stream_distribution_interior<B: Backend>(
     let result = Tensor::cat(rows, 2);
 
     assert_shape_contract_periodically!(
-            ["H" - "PAD", "W" - "PAD", "UY", "UX"],
-            &result.shape().dims,
-            &[("H", h), ("W", w), ("PAD", 2), ("UY", 3), ("UX", 3)]
-        );
+        ["H" - "PAD", "W" - "PAD", "UY", "UX"],
+        &result.shape().dims,
+        &[("H", h), ("W", w), ("PAD", 2), ("UY", 3), ("UX", 3)]
+    );
 
     result
 }
@@ -344,8 +339,8 @@ pub fn stream_distribution_interior<B: Backend>(
 mod tests {
     use super::*;
 
-    use burn::backend::Cuda;
     use burn::Tensor;
+    use burn::backend::Cuda;
     use burn::tensor::Tolerance;
 
     #[test]

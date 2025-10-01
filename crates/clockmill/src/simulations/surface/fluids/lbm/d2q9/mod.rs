@@ -344,6 +344,106 @@ mod tests {
     use burn::tensor::Tolerance;
 
     #[test]
+    fn test_population_density() {
+        type B = Cuda;
+        let device = Default::default();
+
+        let dist: Tensor<B, 4> = Tensor::from_data(
+            [
+                [
+                [[1., 2., 3.], [4., 5., 6.], [7., 8., 9.]],
+                [[10., 20., 30.], [40., 50., 60.], [70., 80., 90.]],
+            ],
+                [
+                    [[9., 10., 3.], [4., 5., 6.], [7., 8., 9.]],
+                    [[0., -2., 0.], [0., 8., 0.], [0., 0., 0.]],
+                ]
+            ],
+            &device,
+        );
+
+        let rho = population_density(dist.clone());
+
+        rho.to_data().assert_approx_eq::<f32>(
+            &Tensor::<B, 2>::from_data(
+                [[45., 450.], [61., 6.]],
+                &device,
+            ).to_data(),
+            Tolerance::default(),
+        )
+    }
+
+    #[test]
+    fn test_direction_vectors() {
+        type B = Cuda;
+        let device = Default::default();
+
+        let e: Tensor<B, 3> = direction_vectors(&device);
+
+        e.to_data().assert_eq(
+            &Tensor::<B, 3>::from_data(
+                [
+                    [[1., -1.], [1., 0.], [1., 1.]],
+                    [[0., -1.], [0., 0.], [0., 1.]],
+                    [[-1., -1.], [-1., 0.], [-1., 1.]],
+                ],
+                &device,
+            ).to_data(),
+            false
+        );
+    }
+
+    #[test]
+    fn test_weight_matrix() {
+        type B = Cuda;
+        let device = Default::default();
+
+        let w: Tensor<B, 2> = weight_matrix(&device);
+
+        w.to_data().assert_eq(
+            &Tensor::<B, 2>::from_data(
+                [
+                    [1.0 / 36.0, 1.0 / 9.0, 1.0 / 36.0],
+                    [1.0 / 9.0, 4.0 / 9.0, 1.0 / 9.0],
+                    [1.0 / 36.0, 1.0 / 9.0, 1.0 / 36.0],
+                ],
+                &device,
+            ).to_data(),
+            false
+        );
+    }
+
+    #[test]
+    fn test_macroscopic_momentum() {
+        type B = Cuda;
+        let device = Default::default();
+
+        let dist: Tensor<B, 4> = Tensor::from_data(
+            [
+                [
+                    [[1., 0., 0.], [0., 10., 0.], [0., 0., 0.]],
+                    [[1., 2., 3.], [4., 10., 5.], [6., 7., 8.]],
+                ],
+            ],
+            &device,
+        );
+
+        let e = direction_vectors(&device);
+
+        let momentum = macroscopic_momentum(dist.clone(), e.clone());
+
+        momentum.to_data().assert_approx_eq::<f32>(
+            &Tensor::<B, 3>::from_data(
+                [
+                    [[1., -1.], [-15., 5.]],
+                ],
+                &device,
+            ).to_data(),
+            Tolerance::default(),
+        )
+    }
+
+    #[test]
     fn test_eq() {
         type B = Cuda;
         let device = Default::default();

@@ -2,7 +2,7 @@ use crate::color::ColorScheme;
 use burn::prelude::{Backend, s};
 use burn::tensor::DType::F32;
 use clockmill::simulations::surface::fluids::lattice_boltzmann::{
-    LBMD2Q9Operations, LBMD2Q9State, LBMMeta, EquilibriumTerms,
+    EquilibriumTerms, LBMD2Q9Operations, LBMD2Q9State, LBMMeta,
 };
 use opengl_graphics::GlGraphics;
 use piston::{RenderArgs, UpdateArgs};

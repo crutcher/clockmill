@@ -1,13 +1,12 @@
 //! # Lattice-Boltzmann Fluid Simulation
 
+use crate::compat::operations::sum_dims;
 use bimm_contracts::{assert_shape_contract_periodically, unpack_shape_contract};
 use burn::Tensor;
 use burn::config::Config;
 use burn::module::Module;
 use burn::prelude::{Backend, Bool, Shape};
 use burn::tensor::{DType, Slice};
-
-use crate::compat::operations::sum_dims;
 
 /// Introspection trait for [`LBMD2Q9State`]
 pub trait LBMMeta {
@@ -184,7 +183,6 @@ pub struct EquilibriumTerms<B: Backend> {
     pub u_sq: Tensor<B, 4>,
 }
 
-
 impl<B: Backend> LBMD2Q9Operations<B> {
     /// Initialize LBM operations.
     pub fn init(device: &B::Device) -> Self {
@@ -235,7 +233,8 @@ impl<B: Backend> LBMD2Q9Operations<B> {
     ) -> Tensor<B, 4> {
         let shape = velocity.shape();
 
-        let EquilibriumTerms { rho, u_dot_e, u_sq } = self.equilibrium_partials(velocity).equi_terms();
+        let EquilibriumTerms { rho, u_dot_e, u_sq } =
+            self.equilibrium_partials(velocity).equi_terms();
 
         let w: Tensor<B, 4> = self.w.clone().expand(shape.clone());
 
@@ -276,8 +275,8 @@ impl<B: Backend> LBMD2Q9Operations<B> {
         // The grid density, broadcast to ``[H, W, 3, 3]``
         let rho = self.density(velocity.clone()).expand(shape.clone());
 
-        let duy = sum_dims(velocity.clone() * ey.clone(), &[- 2, - 1]).div(rho.clone());
-        let dux = sum_dims(velocity * ex.clone(), &[- 2, - 1]).div(rho.clone());
+        let duy = sum_dims(velocity.clone() * ey.clone(), &[-2, -1]).div(rho.clone());
+        let dux = sum_dims(velocity * ex.clone(), &[-2, -1]).div(rho.clone());
 
         EquilibriumPartials {
             ey,
@@ -433,41 +432,6 @@ mod tests {
     use burn::tensor::{Distribution, Tolerance};
 
     #[test]
-    #[allow(unused)]
-    fn test_eq() {
-        type B = Wgpu;
-        let device = Default::default();
-
-        let v: Tensor<B, 4> = Tensor::from_data(
-            [[
-                [[1., 2., 3.], [4., 5., 6.], [7., 8., 9.]],
-                [[10., 20., 30.], [40., 50., 60.], [70., 80., 90.]],
-            ]],
-            &device,
-        );
-
-        let e: Tensor<B, 3> = Tensor::from_data(
-            [
-                [[1., -1.], [1., 0.], [1., 1.]],
-                [[0., -1.], [0., 0.], [0., 1.]],
-                [[-1., -1.], [-1., 0.], [-1., 1.]],
-            ],
-            &device,
-        );
-
-        let rho = v.clone()
-            .sum_dim(2)
-            .sum_dim(3)
-            .squeeze_dims::<2>(&[2, 3]);
-
-        let u = v.clone().unsqueeze_dims::<5>(&[-1])
-            .mul(e.clone().unsqueeze::<5>())
-            .sum_dim(2)
-            .sum_dim(3)
-            .squeeze_dims::<3>(&[2, 3]);
-    }
-
-    #[test]
     fn test_expand_vu_cell_sum() {
         type B = Wgpu;
         let device = Default::default();
@@ -481,7 +445,7 @@ mod tests {
         );
 
         let state = input.clone();
-        let result = sum_dims(state, &[- 2, - 1]);
+        let result = sum_dims(state, &[-2, -1]);
 
         let expected: Tensor<B, 3> = Tensor::from_data([[[45.]], [[450.]]], &device);
         result.to_data().assert_eq(&expected.to_data(), true);
@@ -543,7 +507,7 @@ mod tests {
                 ]],
                 &device,
             )
-                .expand::<4, _>(shape.clone())
+            .expand::<4, _>(shape.clone())
             .to_data(),
             true,
         );
@@ -556,7 +520,7 @@ mod tests {
                 ]],
                 &device,
             )
-                .expand::<4, _>(shape.clone())
+            .expand::<4, _>(shape.clone())
             .to_data(),
             true,
         );

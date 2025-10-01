@@ -235,7 +235,7 @@ impl<B: Backend> LBMD2Q9Operations<B> {
     ) -> Tensor<B, 4> {
         let shape = velocity.shape();
 
-        let EquilibriumTerms { rho, u_dot_e, u_sq } = self.ucell_partials(velocity).equi_terms();
+        let EquilibriumTerms { rho, u_dot_e, u_sq } = self.equilibrium_partials(velocity).equi_terms();
 
         let w: Tensor<B, 4> = self.w.clone().expand(shape.clone());
 
@@ -264,7 +264,7 @@ impl<B: Backend> LBMD2Q9Operations<B> {
     /// # Returns
     ///
     /// A rank ``D`` [`EquilibriumPartials`].
-    pub fn ucell_partials(
+    pub fn equilibrium_partials(
         &self,
         velocity: Tensor<B, 4>,
     ) -> EquilibriumPartials<B> {
@@ -276,10 +276,8 @@ impl<B: Backend> LBMD2Q9Operations<B> {
         // The grid density, broadcast to ``[H, W, 1, 1]``
         let rho = self.density(velocity.clone()).expand(shape.clone());
 
-        let state = velocity.clone() * ey.clone();
-        let duy = sum_dims(state, &[- 2, - 1]).div(rho.clone());
-        let state = velocity.clone() * ex.clone();
-        let dux = sum_dims(state, &[- 2, - 1]).div(rho.clone());
+        let duy = sum_dims(velocity.clone() * ey.clone(), &[- 2, - 1]).div(rho.clone());
+        let dux = sum_dims(velocity * ex.clone(), &[- 2, - 1]).div(rho.clone());
 
         EquilibriumPartials {
             ey,
@@ -470,7 +468,7 @@ mod tests {
         );
         let shape = input.shape();
 
-        let partials = ops.ucell_partials(input.clone());
+        let partials = ops.equilibrium_partials(input.clone());
 
         partials.ey.clone().to_data().assert_eq(
             &Tensor::<B, 4>::from_data(

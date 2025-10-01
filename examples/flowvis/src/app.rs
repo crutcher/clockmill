@@ -26,7 +26,7 @@ impl<B: Backend> FlowVisApp<B> {
         let world_state = &self.world_state;
         let EquilibriumTerms { u_sq, .. } = self
             .ops
-            .ucell_partials(world_state.velocity.clone())
+            .equilibrium_partials(world_state.velocity.clone())
             .equi_terms();
 
         let u = u_sq.sqrt().squeeze_dims::<2>(&[2, 3]);

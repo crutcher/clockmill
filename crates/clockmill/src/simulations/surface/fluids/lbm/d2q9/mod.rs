@@ -1,7 +1,9 @@
 //! # D2Q9 Lattice-Boltzmann Fluid Simulation
 
-use burn::prelude::Backend;
+use bimm_contracts::{assert_shape_contract_periodically, unpack_shape_contract};
+use burn::prelude::{Backend, Bool};
 use burn::Tensor;
+use burn::tensor::Slice;
 
 /// Population Density
 ///
@@ -223,6 +225,121 @@ pub fn bgk_collision<B: Backend>(
     dist.clone() + (dist_eq - dist) * param.as_omega()
 }
 
+
+/// Apply the streaming update step to the non-border cells of a population.
+///
+/// # Arguments
+///
+/// - `dist`: a ``[H, W, V=3, U=3]`` population distribution.
+/// - `solid_mask`: a ``[H, W]`` solid mask.
+///
+/// # Returns
+///
+/// The updated distribution for the ``[H[1:-1], W[1:-1], V=3, U=3]`` interior.
+pub fn stream_distribution_interior<B: Backend>(
+    dist: Tensor<B, 4>,
+    _solid_mask: Tensor<B, 2, Bool>,
+) -> Tensor<B, 4> {
+    let [h, w] = unpack_shape_contract!(
+            ["H", "W", "UY", "UX"],
+            &dist.shape().dims,
+            &["H", "W"],
+            &[("UY", 3), ("UX", 3)]
+        );
+
+    // Map the state into no-copy 3x3 neighborhood windows.
+    let dist_windows = dist
+        .unfold::<5, usize>(0, 3, 1)
+        .unfold::<6, usize>(1, 3, 1);
+
+    // TODO: implement bounce.
+    // This requires computing 3x3x2 columns;
+    // and using a where operation on the solid_mask:
+    // cell = where(mask_cell, bounce_cell, stream_cell)
+
+    assert_shape_contract_periodically!(
+            ["H" - "PAD", "W" - "PAD", "UY", "UX", "HK", "WK"],
+            &dist_windows.shape().dims,
+            &[
+                ("H", h),
+                ("W", w),
+                ("PAD", 2),
+                ("UY", 3),
+                ("UX", 3),
+                ("HK", 3),
+                ("WK", 3)
+            ]
+        );
+
+    // Allocate a mutable selector over the windows.
+    let mut ranges: [Slice; 6] = (0..6)
+        .map(|_| Slice::new(0, None, 1))
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap();
+
+    let mut rows = Vec::with_capacity(3);
+    for hk_idx in 0..3 {
+        // For each hk index, we have a row of 3 columns.
+
+        // Select the hk neighbor from the windows:
+        ranges[4] = Slice::new(hk_idx, Some(hk_idx + 1), 1);
+
+        // Select the complimentary vy flow in that neighbor.
+        let vy_source_idx = 2 - hk_idx;
+        ranges[2] = Slice::new(vy_source_idx, Some(vy_source_idx + 1), 1);
+
+        let mut columns = Vec::with_capacity(3);
+        for wk_idx in 0..3 {
+            // For each wk index, we have a column of 3 cells.
+
+            // Select the wk neighbor from the windows:
+            ranges[5] = Slice::new(wk_idx, Some(wk_idx + 1), 1);
+
+            // Select the complimentary vx flow in that neighbor.
+            let vx_source_idx = 2 - wk_idx;
+            ranges[3] = Slice::new(vx_source_idx, Some(vx_source_idx + 1), 1);
+
+            // `ranges` now contains a slice selector for one of the 9 cells:
+            // ranges = [.., .., vy_source_idx, vx_source_idx, h_win_idx, w_win_idx]
+            let cell = dist_windows
+                .clone()
+                .slice(ranges.clone())
+                .squeeze_dims::<4>(&[-2, -1]);
+
+            assert_shape_contract_periodically!(
+                    ["H" - "PAD", "W" - "PAD", "C", "C"],
+                    &cell.shape().dims,
+                    &[("H", h), ("W", w), ("PAD", 2), ("C", 1)]
+                );
+
+            // Collect the cell into the column vector.
+            columns.push(cell);
+        }
+        // Concatenate the 3 column cells into a row.
+        let row = Tensor::cat(columns, 3);
+
+        assert_shape_contract_periodically!(
+                ["H" - "PAD", "W" - "PAD", "C", "UX"],
+                &row.shape().dims,
+                &[("H", h), ("W", w), ("PAD", 2), ("C", 1), ("UX", 3)]
+            );
+
+        // Collect the row into the rows vector.
+        rows.push(row);
+    }
+    // Concatenate the 3 rows into a result.
+    let result = Tensor::cat(rows, 2);
+
+    assert_shape_contract_periodically!(
+            ["H" - "PAD", "W" - "PAD", "UY", "UX"],
+            &result.shape().dims,
+            &[("H", h), ("W", w), ("PAD", 2), ("UY", 3), ("UX", 3)]
+        );
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -230,7 +347,6 @@ mod tests {
     use burn::backend::Cuda;
     use burn::Tensor;
     use burn::tensor::Tolerance;
-    use crate::simulations::surface::fluids::lbm::d2q9::{direction_vectors, equilibrium, lattice_dot_velocity, macroscopic_velocity, population_density, velocity_squared, weight_matrix};
 
     #[test]
     fn test_eq() {

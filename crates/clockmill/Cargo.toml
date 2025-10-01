@@ -13,7 +13,7 @@ burn = { workspace = true }
 bimm-contracts = { workspace = true }
 
 [dev-dependencies]
-burn = { workspace = true, features = ["cuda", "wgpu", "autotune", "fusion"] }
+burn = { workspace = true, features = ["wgpu"] }
 criterion = { workspace = true }
 
 [lints]

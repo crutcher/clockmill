@@ -14,6 +14,7 @@
       <sourceFolder url="file://$MODULE_DIR$/examples/flowvis/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
       <excludeFolder url="file://$MODULE_DIR$/crates/clockmill/target" />
+      <excludeFolder url="file://$MODULE_DIR$/crates/conway/target" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />

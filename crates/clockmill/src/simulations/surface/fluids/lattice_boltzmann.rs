@@ -273,7 +273,7 @@ impl<B: Backend> LBMD2Q9Operations<B> {
         let ex: Tensor<B, 4> = self.ex.clone().expand(shape.clone());
         let ey: Tensor<B, 4> = self.ey.clone().expand(shape.clone());
 
-        // The grid density, broadcast to ``[H, W, 1, 1]``
+        // The grid density, broadcast to ``[H, W, 3, 3]``
         let rho = self.density(velocity.clone()).expand(shape.clone());
 
         let duy = sum_dims(velocity.clone() * ey.clone(), &[- 2, - 1]).div(rho.clone());
@@ -429,8 +429,43 @@ impl<B: Backend> LBMD2Q9Operations<B> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use burn::backend::Wgpu;
+    use burn::backend::{Wgpu};
     use burn::tensor::{Distribution, Tolerance};
+
+    #[test]
+    #[allow(unused)]
+    fn test_eq() {
+        type B = Wgpu;
+        let device = Default::default();
+
+        let v: Tensor<B, 4> = Tensor::from_data(
+            [[
+                [[1., 2., 3.], [4., 5., 6.], [7., 8., 9.]],
+                [[10., 20., 30.], [40., 50., 60.], [70., 80., 90.]],
+            ]],
+            &device,
+        );
+
+        let e: Tensor<B, 3> = Tensor::from_data(
+            [
+                [[1., -1.], [1., 0.], [1., 1.]],
+                [[0., -1.], [0., 0.], [0., 1.]],
+                [[-1., -1.], [-1., 0.], [-1., 1.]],
+            ],
+            &device,
+        );
+
+        let rho = v.clone()
+            .sum_dim(2)
+            .sum_dim(3)
+            .squeeze_dims::<2>(&[2, 3]);
+
+        let u = v.clone().unsqueeze_dims::<5>(&[-1])
+            .mul(e.clone().unsqueeze::<5>())
+            .sum_dim(2)
+            .sum_dim(3)
+            .squeeze_dims::<3>(&[2, 3]);
+    }
 
     #[test]
     fn test_expand_vu_cell_sum() {
@@ -494,7 +529,9 @@ mod tests {
         );
 
         partials.rho.clone().to_data().assert_eq(
-            &Tensor::<B, 4>::from_data([[[[45.]], [[450.]]]], &device).to_data(),
+            &Tensor::<B, 4>::from_data([[[[45.]], [[450.]]]], &device)
+                .expand::<4, _>(shape.clone())
+                .to_data(),
             true,
         );
 
@@ -506,6 +543,7 @@ mod tests {
                 ]],
                 &device,
             )
+                .expand::<4, _>(shape.clone())
             .to_data(),
             true,
         );
@@ -518,13 +556,16 @@ mod tests {
                 ]],
                 &device,
             )
+                .expand::<4, _>(shape.clone())
             .to_data(),
             true,
         );
 
         let terms = partials.clone().equi_terms();
         terms.rho.clone().to_data().assert_eq(
-            &Tensor::<B, 4>::from_data([[[[45.]], [[450.]]]], &device).to_data(),
+            &Tensor::<B, 4>::from_data([[[[45.]], [[450.]]]], &device)
+                .expand::<4, _>(shape.clone())
+                .to_data(),
             true,
         );
 
@@ -535,7 +576,9 @@ mod tests {
         let us_b = (((30. + 60. + 90.) - (10. + 40. + 70.)) / 450f32).powi(2);
 
         terms.u_sq.clone().to_data().assert_approx_eq::<f32>(
-            &Tensor::<B, 4>::from_data([[[[vs_a + us_a]], [[vs_b + us_b]]]], &device).to_data(),
+            &Tensor::<B, 4>::from_data([[[[vs_a + us_a]], [[vs_b + us_b]]]], &device)
+                .expand::<4, _>(shape.clone())
+                .to_data(),
             Tolerance::default(),
         );
 

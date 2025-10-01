@@ -65,7 +65,7 @@ pub struct Args {
     pub zoom: f64,
 
     /// The opacity between frames.
-    #[arg(long, default_value_t = 0.05)]
+    #[arg(long, default_value_t = 0.2)]
     pub opacity: f32,
 
     /// The color scheme to use.

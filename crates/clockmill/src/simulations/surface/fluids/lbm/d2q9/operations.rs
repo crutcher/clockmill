@@ -4,12 +4,12 @@
 //!
 //! See:
 //! * [Wikipedia](https://en.wikipedia.org/wiki/Lattice_Boltzmann_methods).
+use crate::compat::operations;
 use crate::compat::operations::sum_dims;
 use bimm_contracts::{assert_shape_contract_periodically, unpack_shape_contract};
 use burn::Tensor;
 use burn::prelude::{Backend, Bool};
 use burn::tensor::Slice;
-use crate::compat::operations;
 
 /// Population Density
 ///
@@ -128,7 +128,9 @@ pub fn velocity_squared<B: Backend>(u: Tensor<B, 3>) -> Tensor<B, 2> {
     // Tensor::powi_scalar(2) is still a float pow operation.
     // * u.powi_scalar(2)
     // * u * u
-    operations::fast_powi_2(u).sum_dim(2).squeeze_dims::<2>(&[2])
+    operations::fast_powi_2(u)
+        .sum_dim(2)
+        .squeeze_dims::<2>(&[2])
 }
 
 /// Compute e·u for each lattice direction

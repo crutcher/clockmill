@@ -4,8 +4,7 @@
 //!
 //! See:
 //! * [Wikipedia](https://en.wikipedia.org/wiki/Lattice_Boltzmann_methods).
-use crate::compat::operations;
-use crate::compat::operations::sum_dims;
+use crate::compat::operations::{fast_powi_2, sum_dims};
 use bimm_contracts::{assert_shape_contract_periodically, unpack_shape_contract};
 use burn::Tensor;
 use burn::prelude::{Backend, Bool};
@@ -95,6 +94,7 @@ pub fn normalize_velocity<B: Backend>(
     rho: Tensor<B, 2>,
 ) -> Tensor<B, 3> {
     // TODO: div-by-zero check?
+    // .clamp_min(1e-15)?
     m / rho.unsqueeze_dim(2)
 }
 
@@ -128,7 +128,7 @@ pub fn velocity_squared<B: Backend>(u: Tensor<B, 3>) -> Tensor<B, 2> {
     // Tensor::powi_scalar(2) is still a float pow operation.
     // * u.powi_scalar(2)
     // * u * u
-    operations::fast_powi_2(u)
+    fast_powi_2(u)
         .sum_dim(2)
         .squeeze_dims::<2>(&[2])
 }
@@ -198,7 +198,7 @@ pub fn equilibrium<B: Backend>(
     (w.unsqueeze() * rho.unsqueeze_dim(2)).mul(
         1
             + 3.0 * e_dot_u.clone()
-            + 4.5 * operations::fast_powi_2(e_dot_u)
+            + 4.5 * fast_powi_2(e_dot_u)
             - 1.5 * u_sq.unsqueeze_dims::<4>(&[2, 3])
     )
 }

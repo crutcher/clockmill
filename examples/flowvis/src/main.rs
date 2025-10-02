@@ -1,6 +1,5 @@
 use app::FlowVisApp;
 use burn::prelude::{Backend, s};
-use burn::tensor::f16;
 use clap::Parser;
 use clockmill::simulations::surface::fluids::lbm::d2q9::world::{LBMD2Q9Config, LBMD2Q9State};
 use glutin_window::GlutinWindow as Window;
@@ -9,6 +8,7 @@ use piston::event_loop::{EventSettings, Events};
 use piston::input::{RenderEvent, UpdateEvent};
 use piston::window::WindowSettings;
 use piston::{EventLoop, OpenGLWindow};
+use clockmill::simulations::surface::fluids::lbm::d2q9::operations::RelaxationParam;
 
 mod app;
 
@@ -36,11 +36,11 @@ fn parse_shape(s: &str) -> Result<[usize; 2], String> {
 #[command(long_about = None)]
 pub struct Args {
     /// The grid shape as `HEIGHT,WIDTH`, or `SIZE`.
-    #[arg(long, value_parser=parse_shape, default_value="100")]
+    #[arg(long, value_parser=parse_shape, default_value="200")]
     pub grid_shape: [usize; 2],
 
     /// The number of steps to take per frame.
-    #[arg(long, default_value_t = 100)]
+    #[arg(long, default_value_t = 1)]
     pub step_rate: usize,
 
     /// The number of steps to skip on init.
@@ -48,11 +48,11 @@ pub struct Args {
     pub init_skip_steps: usize,
 
     /// The max frames per second.
-    #[arg(long, default_value_t = 60)]
+    #[arg(long, default_value_t = 10)]
     pub fps: u64,
 
     /// The initial window zoom.
-    #[arg(long, default_value_t = 2.5)]
+    #[arg(long, default_value_t = 4.0)]
     pub zoom: f64,
 }
 
@@ -61,7 +61,7 @@ fn main() {
     println!("{:#?}", args);
 
     #[cfg(feature = "cuda")]
-    run::<burn::backend::Cuda<f16, i32>>(&args);
+    run::<burn::backend::Cuda<f32, i32>>(&args);
 
     #[cfg(feature = "wgpu")]
     run::<burn::backend::Wgpu>(&args);
@@ -103,6 +103,7 @@ fn run<B: Backend>(args: &Args) {
         gl: GlGraphics::new(opengl),
         world_state,
         step_rate: args.step_rate,
+        relaxation: RelaxationParam::Omega(2.0),
     };
     for _ in 0..args.init_skip_steps {
         app.advance_frame();

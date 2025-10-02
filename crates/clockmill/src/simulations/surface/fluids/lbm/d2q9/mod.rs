@@ -113,10 +113,10 @@ pub fn macroscopic_velocity<B: Backend>(
 /// Compute the squared magnitude of velocity field.
 ///
 /// # Arguments
-/// - `u`: `[H, W, (Y, X)=2]` macroscopic velocity
+/// - `u`: ``[H, W, (Y, X)=2]`` macroscopic velocity
 ///
 /// # Returns
-/// - `[H, W]` velocity magnitude squared
+/// - ``[H, W]`` velocity magnitude squared
 pub fn velocity_squared<B: Backend>(u: Tensor<B, 3>) -> Tensor<B, 2> {
     // TODO: Benchmark:
     // Tensor::powi_scalar(2) is still a float pow operation.
@@ -128,29 +128,45 @@ pub fn velocity_squared<B: Backend>(u: Tensor<B, 3>) -> Tensor<B, 2> {
 /// Compute e·u for each lattice direction
 ///
 /// # Arguments
-/// - `e`: `[Y=3, X=3, (Y,X)=2]` direction vectors
-/// - `u`: `[H, W, (Y,X)=2]` macroscopic velocity
+/// - `e`: ``[Y=3, X=3, (Y, X)=2]`` direction vectors
+/// - `u`: ``[H, W, (Y, X)=2]`` macroscopic velocity
 ///
 /// # Returns
-/// - `[H, W, Y=3, X=3]` dot product at each grid point and direction
+///
+/// The ``[H, W, Y=3, X=3]`` dot product at each grid point and direction.
 pub fn lattice_dot_velocity<B: Backend>(
     u: Tensor<B, 3>,
     e: Tensor<B, 3>,
 ) -> Tensor<B, 4> {
-    // e * u[..., None, None, :] -> [H, W, Y, X, 2]
-    // sum over component dimension -> [H, W, Y, X]
-    (e.unsqueeze::<5>() * u.unsqueeze_dims::<5>(&[2, 3]))
-        .sum_dim(4)
-        .squeeze_dims::<4>(&[4])
+    ldv_projection(e, u).sum_dim(4).squeeze_dims::<4>(&[4])
+}
+
+/// The projection component of [`lattice_dot_velocity`].
+///
+/// # Arguments
+/// - `e`: ``[Y=3, X=3, (Y, X)=2]`` direction vectors
+/// - `u`: ``[H, W, (Y, X)=2]`` macroscopic velocity
+///
+/// # Returns
+///
+/// The ``[H, W, Y=3, X=3, (Y, X)=2]`` projection.
+pub fn ldv_projection<B: Backend>(
+    e: Tensor<B, 3>,
+    u: Tensor<B, 3>,
+) -> Tensor<B, 5> {
+    // e[None, None, ... ] * u[..., None, :] -> [H, W, Y, X, 2]
+    // e[1, 1, Y, X, (Y, X)=2] * u[H, W, 1, 1, (Y, X)=2]
+    // -> [H, W, Y, X, (Y, X)]
+    e.unsqueeze::<5>() * u.unsqueeze_dims::<5>(&[2, 3])
 }
 
 /// Compute equilibrium distribution
 ///
 /// # Arguments
-/// - `rho`: `[H, W]` population density
-/// - `u`: `[H, W, (Y,X)=2]` macroscopic velocity
-/// - `e`: `[Y=3, X=3, (Y,X)=2]` direction vectors
-/// - `w`: `[Y=3, X=3]` equilibrium weights
+/// - `rho`: ``[H, W]`` population density
+/// - `u`: ``[H, W, (Y, X)=2]`` macroscopic velocity
+/// - `e`: ``[Y=3, X=3, (Y, X)=2]`` direction vectors
+/// - `w`: ``[Y=3, X=3]`` equilibrium weights
 ///
 /// # Returns
 /// - `[H, W, Y=3, X=3]` equilibrium distribution
@@ -438,9 +454,9 @@ mod tests {
 
         let rho_data = rho.to_data().to_vec::<f32>().unwrap();
 
-        let velocity = macroscopic_velocity(dist.clone(), rho.clone(), e.clone());
+        let v = macroscopic_velocity(dist.clone(), rho.clone(), e.clone());
 
-        velocity.clone().to_data().assert_approx_eq::<f32>(
+        v.clone().to_data().assert_approx_eq::<f32>(
             &Tensor::<B, 3>::from_data(
                 [[
                     [1. / rho_data[0], -1. / rho_data[0]],
@@ -452,7 +468,7 @@ mod tests {
             Tolerance::default(),
         );
 
-        let v_sq = velocity_squared(velocity.clone());
+        let v_sq = velocity_squared(v.clone());
 
         v_sq.clone().to_data().assert_approx_eq::<f32>(
             &Tensor::<B, 2>::from_data(
@@ -463,6 +479,45 @@ mod tests {
                 &device,
             )
             .to_data(),
+            Tolerance::default(),
+        );
+    }
+
+    #[test]
+    fn test_lattice_dot_velocity() {
+        type B = Cuda;
+        let device = Default::default();
+
+        let e: Tensor<B, 3> = direction_vectors(&device);
+
+        let u: Tensor<B, 3> = Tensor::from_data([[[0.1, -2.], [0.5, -1.5]]], &device);
+
+        let parts = ldv_projection(e.clone(), u.clone());
+
+        parts.clone().to_data().assert_approx_eq::<f32>(
+            &Tensor::<B, 5>::from_data(
+                [[
+                    [
+                        [[0.1, 2.], [0.1, 0.], [0.1, -2.]],
+                        [[0., 2.], [0., 0.], [0., -2.]],
+                        [[-0.1, 2.], [-0.1, 0.], [-0.1, -2.]],
+                    ],
+                    [
+                        [[0.5, 1.5], [0.5, 0.], [0.5, -1.5]],
+                        [[0., 1.5], [0., 0.], [0., -1.5]],
+                        [[-0.5, 1.5], [-0.5, 0.], [-0.5, -1.5]],
+                    ],
+                ]],
+                &device,
+            )
+            .to_data(),
+            Tolerance::default(),
+        );
+
+        let e_u = lattice_dot_velocity(u.clone(), e.clone());
+
+        e_u.clone().to_data().assert_approx_eq::<f32>(
+            &parts.sum_dim(4).squeeze_dims::<4>(&[4]).to_data(),
             Tolerance::default(),
         );
     }

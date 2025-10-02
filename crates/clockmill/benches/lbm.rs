@@ -1,10 +1,10 @@
 use burn::Tensor;
 use burn::backend::Wgpu;
-use burn::tensor::DType::{F16, F32, F64};
+use burn::prelude::{Bool, s};
+use burn::tensor::DType::{F16, F32};
 use burn::tensor::Distribution;
 use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{
-    RelaxationParam, bgk_collision, direction_vectors, equilibrium, macroscopic_velocity,
-    population_density, weight_matrix,
+    RelaxationParam, bgk_collision, direction_vectors, stream_interior_cells, weight_matrix,
 };
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
@@ -19,19 +19,40 @@ fn bench_lbm_d2q9(c: &mut Criterion) {
 
     let relaxation = RelaxationParam::Omega(1.5);
 
-    for dtype in [F16, F32, F64] {
-        let dist = Tensor::<B, 4>::random([n, n, 3, 3], Distribution::Default, &device).cast(dtype);
-        let e = direction_vectors(&device).cast(dtype);
-        let w = weight_matrix(&device).cast(dtype);
+    for dtype in [F16, F32] {
+        let e = direction_vectors(&device);
+        let w = weight_matrix(&device);
+
+        let dist = Tensor::<B, 4>::random([n, n, 3, 3], Distribution::Default, &device);
+        let solid_mask = Tensor::<B, 2, Bool>::full([n, n], false, &device);
+
+        let e = e.cast(dtype);
+        let w = w.cast(dtype);
+        let dist = dist.cast(dtype);
 
         group.bench_function(format!("{:?} collision", dtype).as_str(), |b| {
             b.iter(|| {
-                let rho = population_density(dist.clone());
-                let u = macroscopic_velocity(dist.clone(), rho.clone(), e.clone());
-                let dist_eq = equilibrium(rho, u.clone(), e.clone(), w.clone());
-                let dist_col = bgk_collision(dist.clone(), dist_eq, relaxation);
+                let dist_col = bgk_collision(dist.clone(), e.clone(), w.clone(), relaxation);
 
                 black_box(dist_col);
+            })
+        });
+
+        group.bench_function(format!("{:?} streaming", dtype).as_str(), |b| {
+            b.iter(|| {
+                let stream_result = stream_interior_cells(dist.clone(), solid_mask.clone());
+
+                black_box(stream_result);
+            })
+        });
+
+        group.bench_function(format!("{:?} update", dtype).as_str(), |b| {
+            b.iter(|| {
+                let dist = bgk_collision(dist.clone(), e.clone(), w.clone(), relaxation);
+                let stream_result = stream_interior_cells(dist.clone(), solid_mask.clone());
+                let dist = dist.slice_assign(s![1..-1, 1..-1], stream_result);
+
+                black_box(dist);
             })
         });
     }

@@ -1,6 +1,7 @@
 use app::FlowVisApp;
 use burn::prelude::{Backend, s};
 use clap::Parser;
+use clockmill::simulations::surface::fluids::lbm::d2q9::operations::RelaxationParam;
 use clockmill::simulations::surface::fluids::lbm::d2q9::world::{LBMD2Q9Config, LBMD2Q9State};
 use glutin_window::GlutinWindow as Window;
 use opengl_graphics::{GlGraphics, OpenGL};
@@ -8,7 +9,6 @@ use piston::event_loop::{EventSettings, Events};
 use piston::input::{RenderEvent, UpdateEvent};
 use piston::window::WindowSettings;
 use piston::{EventLoop, OpenGLWindow};
-use clockmill::simulations::surface::fluids::lbm::d2q9::operations::RelaxationParam;
 
 mod app;
 

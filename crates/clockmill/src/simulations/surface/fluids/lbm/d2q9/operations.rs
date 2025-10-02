@@ -7,8 +7,7 @@
 use crate::compat::operations::{fast_powi_2, sum_dims};
 use bimm_contracts::{assert_shape_contract_periodically, unpack_shape_contract};
 use burn::Tensor;
-use burn::prelude::{Backend, Bool};
-use burn::tensor::Slice;
+use burn::prelude::{Backend, Bool, s};
 
 /// Population Density
 ///
@@ -19,7 +18,7 @@ use burn::tensor::Slice;
 /// # Returns
 ///
 /// A ``[H, W]`` population density.
-pub fn population_density<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 2> {
+pub fn density<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 2> {
     sum_dims(dist, &[2, 3]).squeeze_dims::<2>(&[2, 3])
 }
 
@@ -116,6 +115,27 @@ pub fn macroscopic_velocity<B: Backend>(
     normalize_velocity(macroscopic_momentum(dist, e), rho)
 }
 
+/// Compute the first (density) and second (macro velocity) moments.
+///
+/// # Arguments
+///
+/// - `dist`: a ``[H, W, Y, X]`` population distribution.
+/// - `e`: the D2Q9 direction vectors.
+///
+/// # Returns
+///
+/// A pair of:
+/// - `density`: ``[H, W]``
+/// - `velocity`: ``[H, W, (Y, X)=2]``
+pub fn moments<B: Backend>(
+    dist: Tensor<B, 4>,
+    e: Tensor<B, 3>,
+) -> (Tensor<B, 2>, Tensor<B, 3>) {
+    let rho = density(dist.clone());
+    let u = macroscopic_velocity(dist, rho.clone(), e);
+    (rho, u)
+}
+
 /// Compute the squared magnitude of velocity field.
 ///
 /// # Arguments
@@ -128,9 +148,7 @@ pub fn velocity_squared<B: Backend>(u: Tensor<B, 3>) -> Tensor<B, 2> {
     // Tensor::powi_scalar(2) is still a float pow operation.
     // * u.powi_scalar(2)
     // * u * u
-    fast_powi_2(u)
-        .sum_dim(2)
-        .squeeze_dims::<2>(&[2])
+    fast_powi_2(u).sum_dim(2).squeeze_dims::<2>(&[2])
 }
 
 /// Compute e·u for each lattice direction
@@ -231,23 +249,45 @@ impl RelaxationParam {
     }
 }
 
-/// Bhatnagar-Gross-Krook collision operator.
+/// The relaxation operator for [`bgk_collision`].
+///
+/// Computes ``dist_a * (1 - omega) + dist_b * omega``.
+///
+/// # Arguments
+/// - `dist_a`: a `[H, W, Y=3, X=3]` distribution.
+/// - `dist_b`: a `[H, W, Y=3, X=3]` distribution.
+/// - `relaxation`: relaxation parameter.
+///
+/// # Returns
+///
+/// The `[H, W, Y=3, X=3]` relaxed sum.
+pub fn relaxed_sum<B: Backend>(
+    dist_a: Tensor<B, 4>,
+    dist_b: Tensor<B, 4>,
+    relaxation: RelaxationParam,
+) -> Tensor<B, 4> {
+    let omega = relaxation.as_omega();
+    dist_a * (1.0 - omega) + dist_b * omega
+}
+
+/// Aggregate Bhatnagar-Gross-Krook collision operator.
 ///
 /// # Arguments
 /// - `dist`: `[H, W, Y=3, X=3]` current distribution
 /// - `dist_eq`: `[H, W, Y=3, X=3]` equilibrium distribution
-/// - `param`: collision parameter.
+/// - `relaxation`: relaxation parameter.
 ///
 /// # Returns
 /// - `[H, W, Y=3, X=3]` post-collision distribution
 pub fn bgk_collision<B: Backend>(
     dist: Tensor<B, 4>,
-    dist_eq: Tensor<B, 4>,
-    param: RelaxationParam,
+    e: Tensor<B, 3>,
+    w: Tensor<B, 2>,
+    relaxation: RelaxationParam,
 ) -> Tensor<B, 4> {
-    dist.clone() + (dist_eq - dist) * param.as_omega()
-    // let omega = param.as_omega();
-    // dist * omega + dist_eq * (1.0 - omega)
+    let (rho, u) = moments(dist.clone(), e.clone());
+    let dist_eq = equilibrium(rho, u, e, w);
+    relaxed_sum(dist, dist_eq, relaxation)
 }
 
 /// Apply the streaming update step to the non-border cells of a population.
@@ -260,7 +300,7 @@ pub fn bgk_collision<B: Backend>(
 /// # Returns
 ///
 /// The updated distribution for the ``[H[1:-1], W[1:-1], V=3, U=3]`` interior.
-pub fn stream_distribution_interior<B: Backend>(
+pub fn stream_interior_cells<B: Backend>(
     dist: Tensor<B, 4>,
     _solid_mask: Tensor<B, 2, Bool>,
 ) -> Tensor<B, 4> {
@@ -272,86 +312,38 @@ pub fn stream_distribution_interior<B: Backend>(
     );
 
     // Map the state into no-copy 3x3 neighborhood windows.
-    let dist_windows = dist.unfold::<5, usize>(0, 3, 1).unfold::<6, usize>(1, 3, 1);
+    let windows = dist.unfold::<5, usize>(0, 3, 1).unfold::<6, usize>(1, 3, 1);
+    // [H-2, W-2, V=3, U=3, HK=3, WK=3]
 
     // TODO: implement bounce.
     // This requires computing 3x3x2 columns;
     // and using a where operation on the solid_mask:
     // cell = where(mask_cell, bounce_cell, stream_cell)
 
-    assert_shape_contract_periodically!(
-        ["H" - "PAD", "W" - "PAD", "UY", "UX", "HK", "WK"],
-        &dist_windows.shape().dims,
-        &[
-            ("H", h),
-            ("W", w),
-            ("PAD", 2),
-            ("UY", 3),
-            ("UX", 3),
-            ("HK", 3),
-            ("WK", 3)
-        ]
+    let result: Tensor<B, 4> = Tensor::cat(
+        (0..3)
+            .map(|hk_idx| -> Tensor<B, 4> {
+                // Select the complimentary vy flow in that neighbor.
+                let vy_source_idx = 2 - hk_idx;
+
+                Tensor::cat(
+                    (0..3)
+                        .map(|wk_idx| -> Tensor<B, 4> {
+                            // Select the complimentary vx flow in that neighbor.
+                            let vx_source_idx = 2 - wk_idx;
+
+                            windows
+                                .clone()
+                                .slice(s![.., .., vy_source_idx, vx_source_idx, hk_idx, wk_idx])
+                                .squeeze_dims::<4>(&[-2, -1])
+                        })
+                        .collect(),
+                    3,
+                )
+            })
+            .collect(),
+        2,
     );
-
-    // Allocate a mutable selector over the windows.
-    let mut ranges: [Slice; 6] = (0..6)
-        .map(|_| Slice::new(0, None, 1))
-        .collect::<Vec<_>>()
-        .try_into()
-        .unwrap();
-
-    let mut rows = Vec::with_capacity(3);
-    for hk_idx in 0..3 {
-        // For each hk index, we have a row of 3 columns.
-
-        // Select the hk neighbor from the windows:
-        ranges[4] = Slice::new(hk_idx, Some(hk_idx + 1), 1);
-
-        // Select the complimentary vy flow in that neighbor.
-        let vy_source_idx = 2 - hk_idx;
-        ranges[2] = Slice::new(vy_source_idx, Some(vy_source_idx + 1), 1);
-
-        let mut columns = Vec::with_capacity(3);
-        for wk_idx in 0..3 {
-            // For each wk index, we have a column of 3 cells.
-
-            // Select the wk neighbor from the windows:
-            ranges[5] = Slice::new(wk_idx, Some(wk_idx + 1), 1);
-
-            // Select the complimentary vx flow in that neighbor.
-            let vx_source_idx = 2 - wk_idx;
-            ranges[3] = Slice::new(vx_source_idx, Some(vx_source_idx + 1), 1);
-
-            // `ranges` now contains a slice selector for one of the 9 cells:
-            // ranges = [.., .., vy_source_idx, vx_source_idx, h_win_idx, w_win_idx]
-            let cell = dist_windows
-                .clone()
-                .slice(ranges.clone())
-                .squeeze_dims::<4>(&[-2, -1]);
-
-            assert_shape_contract_periodically!(
-                ["H" - "PAD", "W" - "PAD", "C", "C"],
-                &cell.shape().dims,
-                &[("H", h), ("W", w), ("PAD", 2), ("C", 1)]
-            );
-
-            // Collect the cell into the column vector.
-            columns.push(cell);
-        }
-        // Concatenate the 3 column cells into a row.
-        let row = Tensor::cat(columns, 3);
-
-        assert_shape_contract_periodically!(
-            ["H" - "PAD", "W" - "PAD", "C", "UX"],
-            &row.shape().dims,
-            &[("H", h), ("W", w), ("PAD", 2), ("C", 1), ("UX", 3)]
-        );
-
-        // Collect the row into the rows vector.
-        rows.push(row);
-    }
-    // Concatenate the 3 rows into a result.
-    let result = Tensor::cat(rows, 2);
 
     assert_shape_contract_periodically!(
         ["H" - "PAD", "W" - "PAD", "UY", "UX"],
@@ -389,7 +381,7 @@ mod tests {
             &device,
         );
 
-        let rho = population_density(dist.clone());
+        let rho = density(dist.clone());
 
         rho.to_data().assert_approx_eq::<f32>(
             &Tensor::<B, 2>::from_data([[45., 450.], [61., 6.]], &device).to_data(),
@@ -461,13 +453,11 @@ mod tests {
             Tolerance::default(),
         );
 
-        let rho = population_density(dist.clone());
+        let (rho, u) = moments(dist.clone(), e.clone());
 
         let rho_data = rho.to_data().to_vec::<f32>().unwrap();
 
-        let v = macroscopic_velocity(dist.clone(), rho.clone(), e.clone());
-
-        v.clone().to_data().assert_approx_eq::<f32>(
+        u.clone().to_data().assert_approx_eq::<f32>(
             &Tensor::<B, 3>::from_data(
                 [[
                     [1. / rho_data[0], -1. / rho_data[0]],
@@ -479,7 +469,7 @@ mod tests {
             Tolerance::default(),
         );
 
-        let v_sq = velocity_squared(v.clone());
+        let v_sq = velocity_squared(u.clone());
 
         v_sq.clone().to_data().assert_approx_eq::<f32>(
             &Tensor::<B, 2>::from_data(
@@ -538,24 +528,41 @@ mod tests {
         type B = Cuda;
         let device = Default::default();
 
-        let dist = Tensor::<B, 4>::random([20, 20, 3, 3], Distribution::Uniform(0.1, 1.0), &device);
-
-        let rho = population_density(dist.clone());
         let e = direction_vectors(&device);
         let w = weight_matrix(&device);
-        let u = macroscopic_velocity(dist.clone(), rho.clone(), e.clone());
+
+        let dist = Tensor::<B, 4>::random([20, 20, 3, 3], Distribution::Uniform(0.1, 1.0), &device);
+
+        let (rho, u) = moments(dist.clone(), e.clone());
+        let dist_eq = equilibrium(rho.clone(), u.clone(), e.clone(), w.clone());
 
         // Invariant: density(equilibrium(dist)) == density(dist)
-        let dist_eq = equilibrium(rho.clone(), u.clone(), e.clone(), w.clone());
-        population_density(dist_eq.clone())
+        density(dist_eq.clone())
             .to_data()
             .assert_approx_eq::<f32>(&rho.to_data(), Tolerance::default());
+    }
+
+    #[test]
+    fn test_collision_invariants() {
+        type B = Cuda;
+        let device = Default::default();
+
+        let e = direction_vectors(&device);
+        let w = weight_matrix(&device);
+
+        let dist = Tensor::<B, 4>::random([20, 20, 3, 3], Distribution::Uniform(0.1, 1.0), &device);
+
+        let dist_col = bgk_collision(
+            dist.clone(),
+            e.clone(),
+            w.clone(),
+            RelaxationParam::Omega(0.5),
+        );
 
         // Invariant: density(collision(dist, param)) == density(dist)
-        let dist_col = bgk_collision(dist.clone(), dist_eq.clone(), RelaxationParam::Omega(0.5));
-        population_density(dist_col.clone())
+        density(dist_col.clone())
             .to_data()
-            .assert_approx_eq::<f32>(&rho.to_data(), Tolerance::default());
+            .assert_approx_eq::<f32>(&density(dist).to_data(), Tolerance::default());
     }
 
     #[test]
@@ -566,14 +573,14 @@ mod tests {
 
         let dist = Tensor::<B, 4>::random([20, 20, 3, 3], Distribution::Default, &device);
 
-        let rho = population_density(dist.clone());
         let e = direction_vectors(&device);
         let w = weight_matrix(&device);
-        let u = macroscopic_velocity(dist.clone(), rho.clone(), e.clone());
+
+        let (rho, u) = moments(dist.clone(), e.clone());
 
         let dist_eq = equilibrium(rho.clone(), u.clone(), e.clone(), w.clone());
 
-        population_density(dist_eq.clone())
+        density(dist_eq.clone())
             .to_data()
             .assert_approx_eq::<f32>(&rho.to_data(), Tolerance::default());
 
@@ -651,7 +658,7 @@ mod tests {
         ], &device);
         let solid_mask = Tensor::<B, 2>::zeros([3, 3], &device).bool();
 
-        let result = stream_distribution_interior(state.clone(), solid_mask.clone());
+        let result = stream_interior_cells(state.clone(), solid_mask.clone());
 
         assert_eq!(result.shape().dims, vec![1, 1, 3, 3]);
 

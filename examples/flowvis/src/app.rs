@@ -1,5 +1,8 @@
 use burn::prelude::{Backend, s};
-use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{RelaxationParam, bgk_collision, direction_vectors, equilibrium, macroscopic_velocity, population_density, stream_distribution_interior, weight_matrix, macroscopic_momentum};
+use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{
+    RelaxationParam, bgk_collision, direction_vectors, macroscopic_momentum,
+    stream_interior_cells, weight_matrix,
+};
 use clockmill::simulations::surface::fluids::lbm::d2q9::world::{LBMD2Q9State, LBMMeta};
 use opengl_graphics::GlGraphics;
 use piston::{RenderArgs, UpdateArgs};
@@ -67,25 +70,20 @@ impl<B: Backend> FlowVisApp<B> {
     }
 
     pub fn advance_frame(&mut self) {
+        let device = self.world_state.device();
+        let mut dist = self.world_state.dist.clone();
+        let e = direction_vectors(&device);
+        let w = weight_matrix(&device);
+
         for _ in 0..self.step_rate {
-            let device = self.world_state.device();
-            let dist = self.world_state.dist.clone();
-
-            let rho = population_density(dist.clone());
-            let e = direction_vectors(&device);
-            let w = weight_matrix(&device);
-            let u = macroscopic_velocity(dist.clone(), rho.clone(), e.clone());
-
-            let eq = equilibrium(rho.clone(), u.clone(), e.clone(), w.clone());
-
-            let dist = bgk_collision(dist.clone(), eq.clone(), self.relaxation);
+            dist = bgk_collision(dist.clone(), e.clone(), w.clone(), self.relaxation);
 
             let interior =
-                stream_distribution_interior(dist.clone(), self.world_state.solid_mask.clone());
+                stream_interior_cells(dist.clone(), self.world_state.solid_mask.clone());
 
-            let dist = dist.slice_assign(s![1..-1, 1..-1], interior);
-
-            self.world_state.dist = dist;
+            dist = dist.slice_assign(s![1..-1, 1..-1], interior);
         }
+
+        self.world_state.dist = dist;
     }
 }

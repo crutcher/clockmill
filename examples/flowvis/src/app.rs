@@ -1,4 +1,5 @@
 use burn::prelude::{Backend, s};
+use burn::tensor::f16;
 use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{
     RelaxationParam, bgk_collision, direction_vectors, equilibrium, macroscopic_velocity,
     population_density, stream_distribution_interior, weight_matrix,
@@ -27,7 +28,7 @@ impl<B: Backend> FlowVisApp<B> {
         let cells = population_density(dist.clone());
         let max_rho = cells.clone().max_dim(0).max_dim(1).into_scalar();
         let cells = cells / max_rho;
-        let cells = cells.to_data().into_vec::<f32>().unwrap();
+        let cells = cells.to_data().into_vec::<f16>().unwrap();
         assert_eq!(cells.len(), h * w);
 
         let [view_width, view_height] = args.viewport().draw_size;
@@ -39,7 +40,7 @@ impl<B: Backend> FlowVisApp<B> {
         self.gl.draw(args.viewport(), |c, gl| {
             for y in 0..h {
                 for x in 0..w {
-                    let v = cells[x + y * w];
+                    let v: f32 = cells[x + y * w].into();
 
                     let color = if v.is_finite() {
                         [0., 1. - v, v, 1.0]

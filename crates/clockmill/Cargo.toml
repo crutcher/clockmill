@@ -13,7 +13,9 @@ burn = { workspace = true }
 bimm-contracts = { workspace = true }
 
 [dev-dependencies]
-burn = { workspace = true, features = ["cuda", "wgpu", "cubecl", "autotune", "fusion"] }
+burn = { workspace = true, features = ["cuda", "wgpu", "vulkan"] }
+
+# For benchmarks:
 criterion = { workspace = true }
 
 [lints]

@@ -10,6 +10,10 @@ use burn::Tensor;
 use burn::prelude::{Backend, Bool};
 use burn::tensor::Slice;
 
+fn square<B: Backend, const D: usize>(tensor: Tensor<B, D>) -> Tensor<B, D> {
+    tensor.clone().mul(tensor)
+}
+
 /// Population Density
 ///
 /// # Arguments
@@ -127,7 +131,7 @@ pub fn velocity_squared<B: Backend>(u: Tensor<B, 3>) -> Tensor<B, 2> {
     // Tensor::powi_scalar(2) is still a float pow operation.
     // * u.powi_scalar(2)
     // * u * u
-    u.powi_scalar(2).sum_dim(2).squeeze_dims::<2>(&[2])
+    square(u).sum_dim(2).squeeze_dims::<2>(&[2])
 }
 
 /// Compute e·u for each lattice direction
@@ -195,7 +199,7 @@ pub fn equilibrium<B: Backend>(
     (w.unsqueeze() * rho.unsqueeze_dim(2)).mul(
         1
             + 3.0 * e_dot_u.clone()
-            + 4.5 * e_dot_u.clone().powi_scalar(2)
+            + 4.5 * square(e_dot_u)
             - 1.5 * u_sq.unsqueeze_dims::<4>(&[2, 3])
     )
 }
@@ -243,6 +247,8 @@ pub fn bgk_collision<B: Backend>(
     param: RelaxationParam,
 ) -> Tensor<B, 4> {
     dist.clone() + (dist_eq - dist) * param.as_omega()
+    // let omega = param.as_omega();
+    // dist * omega + dist_eq * (1.0 - omega)
 }
 
 /// Apply the streaming update step to the non-border cells of a population.

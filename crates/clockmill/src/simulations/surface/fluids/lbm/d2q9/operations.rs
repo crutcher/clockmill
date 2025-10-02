@@ -95,7 +95,7 @@ pub fn normalize_velocity<B: Backend>(
 ) -> Tensor<B, 3> {
     // TODO: div-by-zero check?
     // .clamp_min(1e-15)?
-    m / rho.unsqueeze_dim(2)
+    m.div(rho.add_scalar(1e-15).unsqueeze_dim(2))
 }
 
 /// Compute the directional macroscopic velocity.

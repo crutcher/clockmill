@@ -1,8 +1,5 @@
 use burn::prelude::{Backend, s};
-use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{
-    RelaxationParam, bgk_collision, direction_vectors, equilibrium, macroscopic_velocity,
-    population_density, stream_distribution_interior, weight_matrix,
-};
+use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{RelaxationParam, bgk_collision, direction_vectors, equilibrium, macroscopic_velocity, population_density, stream_distribution_interior, weight_matrix, macroscopic_momentum};
 use clockmill::simulations::surface::fluids::lbm::d2q9::world::{LBMD2Q9State, LBMMeta};
 use opengl_graphics::GlGraphics;
 use piston::{RenderArgs, UpdateArgs};
@@ -25,11 +22,14 @@ impl<B: Backend> FlowVisApp<B> {
         let [h, w] = world_state.shape();
         let dist = &world_state.dist;
 
-        let cells = population_density(dist.clone());
-        let max_rho = cells.clone().max_dim(0).max_dim(1).into_scalar();
-        let cells = cells / max_rho;
-        let cells = cells.to_data().into_vec::<f32>().unwrap();
-        assert_eq!(cells.len(), h * w);
+        let device = world_state.device();
+        let e = direction_vectors(&device);
+        let momentum = macroscopic_momentum(dist.clone(), e.clone());
+        let max_mom = momentum.clone().max().into_scalar();
+        let norm_momentum = momentum / max_mom;
+
+        let cells = norm_momentum.to_data().into_vec::<f32>().unwrap();
+        assert_eq!(cells.len(), h * w * 2);
 
         let [view_width, view_height] = args.viewport().draw_size;
         let [x_step, y_step] = [
@@ -40,10 +40,11 @@ impl<B: Backend> FlowVisApp<B> {
         self.gl.draw(args.viewport(), |c, gl| {
             for y in 0..h {
                 for x in 0..w {
-                    let v: f32 = cells[x + y * w];
+                    let vy: f32 = cells[x * 2 + y * 2 * w];
+                    let vx: f32 = cells[1 + x * 2 + y * 2 * w];
 
-                    let color = if v.is_finite() {
-                        [0., 1. - v, v, 1.0]
+                    let color = if vy.is_finite() && vx.is_finite() {
+                        [0., vy, vx, 1.0]
                     } else {
                         [1., 0., 0., 1.]
                     };

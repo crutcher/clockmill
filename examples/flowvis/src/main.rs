@@ -36,7 +36,7 @@ fn parse_shape(s: &str) -> Result<[usize; 2], String> {
 #[command(long_about = None)]
 pub struct Args {
     /// The grid shape as `HEIGHT,WIDTH`, or `SIZE`.
-    #[arg(long, value_parser=parse_shape, default_value="200")]
+    #[arg(long, value_parser=parse_shape, default_value="100")]
     pub grid_shape: [usize; 2],
 
     /// The number of steps to take per frame.
@@ -52,7 +52,7 @@ pub struct Args {
     pub fps: u64,
 
     /// The initial window zoom.
-    #[arg(long, default_value_t = 4.0)]
+    #[arg(long, default_value_t = 15.0)]
     pub zoom: f64,
 }
 
@@ -92,7 +92,7 @@ fn run<B: Backend>(args: &Args) {
     // Load the OpenGL function pointers
     gl::load_with(|s| window.get_proc_address(s) as *const _);
 
-    let mut world_state: LBMD2Q9State<B> = LBMD2Q9Config::new(args.grid_shape).init(0.1, &device);
+    let mut world_state: LBMD2Q9State<B> = LBMD2Q9Config::new(args.grid_shape).init(0.0, &device);
     world_state.dist = world_state
         .dist
         .slice_fill(s![40, 50, 1, 1], 10.0)
@@ -103,7 +103,7 @@ fn run<B: Backend>(args: &Args) {
         gl: GlGraphics::new(opengl),
         world_state,
         step_rate: args.step_rate,
-        relaxation: RelaxationParam::Omega(2.0),
+        relaxation: RelaxationParam::Omega(1.8),
     };
     for _ in 0..args.init_skip_steps {
         app.advance_frame();

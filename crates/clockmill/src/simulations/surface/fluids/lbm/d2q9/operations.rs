@@ -312,7 +312,7 @@ pub fn stream_interior_cells<B: Backend>(
     );
 
     // Map the state into no-copy 3x3 neighborhood windows.
-    let windows = dist.unfold::<5, usize>(0, 3, 1).unfold::<6, usize>(1, 3, 1);
+    let windows = dist.unfold::<5, _>(0, 3, 1).unfold::<6, _>(1, 3, 1);
     // [H-2, W-2, V=3, U=3, HK=3, WK=3]
 
     // TODO: implement bounce.

@@ -17,3 +17,10 @@ pub fn sum_dims<B: Backend, const D: usize, I: AsIndex>(
         tensor.sum_dim(dim)
     })
 }
+
+/// Fast `tensor.powi(2)` implementation.
+///
+/// [`burn`] currently has no specialization for `tensor.powi(2)`.
+pub fn fast_powi_2<B: Backend, const D: usize>(tensor: Tensor<B, D>) -> Tensor<B, D> {
+    tensor.clone().mul(tensor)
+}

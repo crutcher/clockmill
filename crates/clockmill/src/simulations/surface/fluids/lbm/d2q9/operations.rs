@@ -9,10 +9,7 @@ use bimm_contracts::{assert_shape_contract_periodically, unpack_shape_contract};
 use burn::Tensor;
 use burn::prelude::{Backend, Bool};
 use burn::tensor::Slice;
-
-fn square<B: Backend, const D: usize>(tensor: Tensor<B, D>) -> Tensor<B, D> {
-    tensor.clone().mul(tensor)
-}
+use crate::compat::operations;
 
 /// Population Density
 ///
@@ -131,7 +128,7 @@ pub fn velocity_squared<B: Backend>(u: Tensor<B, 3>) -> Tensor<B, 2> {
     // Tensor::powi_scalar(2) is still a float pow operation.
     // * u.powi_scalar(2)
     // * u * u
-    square(u).sum_dim(2).squeeze_dims::<2>(&[2])
+    operations::fast_powi_2(u).sum_dim(2).squeeze_dims::<2>(&[2])
 }
 
 /// Compute e·u for each lattice direction
@@ -199,7 +196,7 @@ pub fn equilibrium<B: Backend>(
     (w.unsqueeze() * rho.unsqueeze_dim(2)).mul(
         1
             + 3.0 * e_dot_u.clone()
-            + 4.5 * square(e_dot_u)
+            + 4.5 * operations::fast_powi_2(e_dot_u)
             - 1.5 * u_sq.unsqueeze_dims::<4>(&[2, 3])
     )
 }

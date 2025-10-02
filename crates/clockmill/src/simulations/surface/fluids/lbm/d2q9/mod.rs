@@ -357,7 +357,7 @@ mod tests {
 
     use burn::Tensor;
     use burn::backend::Cuda;
-    use burn::tensor::Tolerance;
+    use burn::tensor::{Distribution, Tolerance};
 
     #[test]
     fn test_population_density() {
@@ -523,50 +523,52 @@ mod tests {
     }
 
     #[test]
-    fn test_eq() {
+    fn test_equilibrium_invariants() {
         type B = Cuda;
         let device = Default::default();
-        // Population Distribution
-        // [H, W, Y, X]
-        let dist: Tensor<B, 4> = Tensor::from_data(
-            [[
-                [[1., 2., 3.], [4., 5., 6.], [7., 8., 9.]],
-                [[10., 20., 30.], [40., 50., 60.], [70., 80., 90.]],
-            ]],
-            &device,
-        );
 
-        // Population Density
-        // [H, W]
+        let dist = Tensor::<B, 4>::random([20, 20, 3, 3], Distribution::Default, &device);
+
         let rho = population_density(dist.clone());
-
-        // Directional Vectors
-        // [H, W, (Y, X)]
         let e = direction_vectors(&device);
-
-        // Weight Matrix
-        // [Y, X]
-        let w = weight_matrix::<B>(&device);
-
-        // Macroscopic Momentum
-        // [H, W, (Y, X)]
+        let w = weight_matrix(&device);
         let u = macroscopic_velocity(dist.clone(), rho.clone(), e.clone());
 
-        // Velocity Squared
-        // [H, W]
-        let _u_sq = velocity_squared(u.clone());
+        let eq = equilibrium(rho.clone(), u.clone(), e.clone(), w.clone());
 
-        // Velocity Projection.
-        let _e_u = lattice_dot_velocity(u.clone(), e.clone());
+        population_density(eq.clone())
+            .to_data()
+            .assert_approx_eq::<f32>(&rho.to_data(), Tolerance::default());
+    }
 
-        let eq_dist = equilibrium(rho.clone(), u.clone(), e.clone(), w.clone());
+    #[test]
+    #[rustfmt::skip]
+    fn test_equilibrium() {
+        type B = Cuda;
+        let device = Default::default();
 
-        // Invariant: density(equilibrium(..., dist)) == density(dist)
-        population_density(eq_dist.clone())
-            .clone()
-            .into_data()
-            .assert_approx_eq::<f32>(&rho.clone().into_data(), Tolerance::default());
+        let dist = Tensor::<B, 4>::random([20, 20, 3, 3], Distribution::Default, &device);
 
-        let _update_dist = bgk_collision(dist.clone(), eq_dist.clone(), RelaxationParam::Tau(0.7));
+        let rho = population_density(dist.clone());
+        let e = direction_vectors(&device);
+        let w = weight_matrix(&device);
+        let u = macroscopic_velocity(dist.clone(), rho.clone(), e.clone());
+
+        let eq = equilibrium(rho.clone(), u.clone(), e.clone(), w.clone());
+
+        population_density(eq.clone())
+            .to_data()
+            .assert_approx_eq::<f32>(&rho.to_data(), Tolerance::default());
+
+        let e_dot_u = lattice_dot_velocity(u.clone(), e);
+        let u_sq = velocity_squared(u);
+        let expected_eq = (w.unsqueeze() * rho.unsqueeze_dim(2)).mul(
+            1
+                + 3.0 * e_dot_u.clone()
+                + 4.5 * e_dot_u.clone().powi_scalar(2)
+                - 1.5 * u_sq.unsqueeze_dims::<4>(&[2, 3])
+        );
+
+        eq.to_data().assert_approx_eq::<f32>(&expected_eq.to_data(), Tolerance::default());
     }
 }

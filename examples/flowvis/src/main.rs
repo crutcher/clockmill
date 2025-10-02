@@ -1,7 +1,7 @@
 use app::FlowVisApp;
 use burn::prelude::{Backend, s};
 use clap::Parser;
-use clockmill::simulations::surface::fluids::lattice_boltzmann::{LBMD2Q9Config, LBMD2Q9State};
+use clockmill::simulations::surface::fluids::lbm::d2q9::world::{LBMD2Q9Config, LBMD2Q9State};
 use glutin_window::GlutinWindow as Window;
 use opengl_graphics::{GlGraphics, OpenGL};
 use piston::event_loop::{EventSettings, Events};
@@ -39,7 +39,7 @@ pub struct Args {
     pub grid_shape: [usize; 2],
 
     /// The number of steps to take per frame.
-    #[arg(long, default_value_t = 1)]
+    #[arg(long, default_value_t = 100)]
     pub step_rate: usize,
 
     /// The number of steps to skip on init.
@@ -47,7 +47,7 @@ pub struct Args {
     pub init_skip_steps: usize,
 
     /// The max frames per second.
-    #[arg(long, default_value_t = 1)]
+    #[arg(long, default_value_t = 60)]
     pub fps: u64,
 
     /// The initial window zoom.
@@ -91,10 +91,9 @@ fn run<B: Backend>(args: &Args) {
     // Load the OpenGL function pointers
     gl::load_with(|s| window.get_proc_address(s) as *const _);
 
-    let mut world_state: LBMD2Q9State<B> = LBMD2Q9Config::new(args.grid_shape).init(&device);
+    let mut world_state: LBMD2Q9State<B> = LBMD2Q9Config::new(args.grid_shape).init(0.1, &device);
     world_state.dist = world_state
         .dist
-        .slice_fill(s![.., .., 1, 1], 1.0)
         .slice_fill(s![40, 50, 1, 1], 10.0)
         .slice_fill(s![50, 50, 1, 1], 10.0);
 
@@ -112,12 +111,12 @@ fn run<B: Backend>(args: &Args) {
     events.set_ups(args.fps);
 
     while let Some(e) = events.next(&mut window) {
-        if let Some(args) = e.render_args() {
-            app.render(&args);
+        if let Some(render_args) = e.render_args() {
+            app.render(&render_args);
         }
 
-        if let Some(args) = e.update_args() {
-            app.update(&args);
+        if let Some(update_args) = e.update_args() {
+            app.update(&update_args);
         }
     }
 }

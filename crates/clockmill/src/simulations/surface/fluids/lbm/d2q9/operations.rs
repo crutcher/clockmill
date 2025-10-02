@@ -93,6 +93,7 @@ pub fn normalize_velocity<B: Backend>(
     m: Tensor<B, 3>,
     rho: Tensor<B, 2>,
 ) -> Tensor<B, 3> {
+    // TODO: div-by-zero check?
     m / rho.unsqueeze_dim(2)
 }
 
@@ -532,16 +533,22 @@ mod tests {
         type B = Cuda;
         let device = Default::default();
 
-        let dist = Tensor::<B, 4>::random([20, 20, 3, 3], Distribution::Default, &device);
+        let dist = Tensor::<B, 4>::random([20, 20, 3, 3], Distribution::Uniform(0.1, 1.0), &device);
 
         let rho = population_density(dist.clone());
         let e = direction_vectors(&device);
         let w = weight_matrix(&device);
         let u = macroscopic_velocity(dist.clone(), rho.clone(), e.clone());
 
-        let eq = equilibrium(rho.clone(), u.clone(), e.clone(), w.clone());
+        // Invariant: density(equilibrium(dist)) == density(dist)
+        let dist_eq = equilibrium(rho.clone(), u.clone(), e.clone(), w.clone());
+        population_density(dist_eq.clone())
+            .to_data()
+            .assert_approx_eq::<f32>(&rho.to_data(), Tolerance::default());
 
-        population_density(eq.clone())
+        // Invariant: density(collision(dist, param)) == density(dist)
+        let dist_col = bgk_collision(dist.clone(), dist_eq.clone(), RelaxationParam::Omega(0.5));
+        population_density(dist_col.clone())
             .to_data()
             .assert_approx_eq::<f32>(&rho.to_data(), Tolerance::default());
     }
@@ -559,9 +566,9 @@ mod tests {
         let w = weight_matrix(&device);
         let u = macroscopic_velocity(dist.clone(), rho.clone(), e.clone());
 
-        let eq = equilibrium(rho.clone(), u.clone(), e.clone(), w.clone());
+        let dist_eq = equilibrium(rho.clone(), u.clone(), e.clone(), w.clone());
 
-        population_density(eq.clone())
+        population_density(dist_eq.clone())
             .to_data()
             .assert_approx_eq::<f32>(&rho.to_data(), Tolerance::default());
 
@@ -574,7 +581,8 @@ mod tests {
                 - 1.5 * u_sq.unsqueeze_dims::<4>(&[2, 3])
         );
 
-        eq.to_data().assert_approx_eq::<f32>(&expected_eq.to_data(), Tolerance::default());
+        dist_eq.clone().to_data().assert_approx_eq::<f32>(&expected_eq.to_data(), Tolerance::default());
+
     }
 
     #[test]

@@ -1,9 +1,9 @@
 use burn::prelude::{Backend, s};
-use clockmill::simulations::surface::fluids::lattice_boltzmann::{LBMD2Q9State, LBMMeta};
 use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{
     RelaxationParam, bgk_collision, direction_vectors, equilibrium, macroscopic_velocity,
     population_density, stream_distribution_interior, weight_matrix,
 };
+use clockmill::simulations::surface::fluids::lbm::d2q9::world::{LBMD2Q9State, LBMMeta};
 use opengl_graphics::GlGraphics;
 use piston::{RenderArgs, UpdateArgs};
 
@@ -24,27 +24,32 @@ impl<B: Backend> FlowVisApp<B> {
         let [h, w] = world_state.shape();
         let dist = &world_state.dist;
 
-        let cells = population_density(dist.clone()).add_scalar(1.0).log();
-        let max_rho = cells.clone().max_dim(1).max_dim(1);
+        let cells = population_density(dist.clone());
+        let max_rho = cells.clone().max_dim(0).max_dim(1).into_scalar();
         let cells = cells / max_rho;
         let cells = cells.to_data().into_vec::<f32>().unwrap();
         assert_eq!(cells.len(), h * w);
 
-        let [win_w, win_h] = args.viewport().draw_size;
-        let draw_scale = [(win_w as f64) / (w as f64), (win_h as f64) / (h as f64)];
+        let [view_width, view_height] = args.viewport().draw_size;
+        let [x_step, y_step] = [
+            (view_width as f64) / (w as f64),
+            (view_height as f64) / (h as f64),
+        ];
 
         self.gl.draw(args.viewport(), |c, gl| {
-            for h_idx in 0..h {
-                for w_idx in 0..w {
-                    let v = cells[h_idx * w + w_idx];
+            for y in 0..h {
+                for x in 0..w {
+                    let v = cells[x + y * w];
 
-                    let color = [v, v, v, 1.0];
+                    let color = if v.is_finite() {
+                        [0., 1. - v, v, 1.0]
+                    } else {
+                        [1., 0., 0., 1.]
+                    };
 
-                    let pos = [0., 0., draw_scale[0], draw_scale[1]];
+                    let pos = [0., 0., x_step, y_step];
 
-                    let transform = c
-                        .transform
-                        .trans(w_idx as f64 * draw_scale[0], h_idx as f64 * draw_scale[1]);
+                    let transform = c.transform.trans(x as f64 * x_step, y as f64 * y_step);
 
                     Rectangle::new(color).draw(pos, &c.draw_state, transform, gl);
                 }
@@ -60,7 +65,7 @@ impl<B: Backend> FlowVisApp<B> {
     }
 
     pub fn advance_frame(&mut self) {
-        let relaxation = RelaxationParam::Omega(0.1);
+        let relaxation = RelaxationParam::Omega(1.5);
 
         for _ in 0..self.step_rate {
             let device = self.world_state.device();

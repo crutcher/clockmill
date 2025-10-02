@@ -8,6 +8,7 @@ use crate::compat::operations::{fast_powi_2, sum_dims};
 use bimm_contracts::{assert_shape_contract_periodically, unpack_shape_contract};
 use burn::Tensor;
 use burn::prelude::{Backend, Bool, s};
+use burn::serde::{Deserialize, Serialize};
 
 /// Population Density
 ///
@@ -71,8 +72,7 @@ pub fn macroscopic_momentum<B: Backend>(
     e: Tensor<B, 3>,
 ) -> Tensor<B, 3> {
     sum_dims(
-        dist.unsqueeze_dims::<5>(&[-1])
-            .mul(e.clone().unsqueeze::<5>()),
+        dist.unsqueeze_dims::<5>(&[-1]).mul(e.unsqueeze::<5>()),
         &[2, 3],
     )
     .squeeze_dims::<3>(&[2, 3])
@@ -94,7 +94,7 @@ pub fn normalize_velocity<B: Backend>(
 ) -> Tensor<B, 3> {
     // TODO: div-by-zero check?
     // .clamp_min(1e-15)?
-    m.div(rho.add_scalar(1e-15).unsqueeze_dim(2))
+    m.div(rho.add_scalar(1e-7).unsqueeze_dim(2))
 }
 
 /// Compute the directional macroscopic velocity.
@@ -222,7 +222,7 @@ pub fn equilibrium<B: Backend>(
 }
 
 /// Wrapper for the BGK collision operator.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum RelaxationParam {
     /// Relaxation frequency (1/tau), typically in (0, 2)
     Omega(f64),
@@ -233,7 +233,7 @@ pub enum RelaxationParam {
 
 impl RelaxationParam {
     /// Get the relaxation frequency (1/tau), typically in (0, 2)
-    pub fn as_omega(&self) -> f64 {
+    pub fn as_omega_value(&self) -> f64 {
         match self {
             RelaxationParam::Omega(omega) => *omega,
             RelaxationParam::Tau(tau) => 1.0 / *tau,
@@ -241,7 +241,7 @@ impl RelaxationParam {
     }
 
     /// Get the relaxation time (1/omega), typically > 0.5
-    pub fn as_tau(&self) -> f64 {
+    pub fn as_tau_value(&self) -> f64 {
         match self {
             RelaxationParam::Omega(omega) => 1.0 / *omega,
             RelaxationParam::Tau(tau) => *tau,
@@ -266,7 +266,7 @@ pub fn relaxed_sum<B: Backend>(
     dist_b: Tensor<B, 4>,
     relaxation: RelaxationParam,
 ) -> Tensor<B, 4> {
-    let omega = relaxation.as_omega();
+    let omega = relaxation.as_omega_value();
     dist_a * (1.0 - omega) + dist_b * omega
 }
 

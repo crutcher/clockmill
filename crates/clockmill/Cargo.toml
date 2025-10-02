@@ -11,6 +11,7 @@ rust-version.workspace = true
 [dependencies]
 burn = { workspace = true }
 bimm-contracts = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
 burn = { workspace = true, features = ["cuda", "wgpu", "vulkan"] }

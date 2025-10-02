@@ -1,9 +1,12 @@
 //! # LBM D2Q9 World Module
 
+use crate::simulations::surface::fluids::lbm::d2q9::operations::{
+    RelaxationParam, bgk_collision, direction_vectors, stream_interior_cells, weight_matrix,
+};
 use burn::Tensor;
 use burn::config::Config;
-use burn::module::Module;
-use burn::prelude::{Backend, Bool};
+use burn::module::{Ignored, Module};
+use burn::prelude::{Backend, Bool, s};
 use burn::tensor::DType;
 
 /// Introspection trait for [`LBMD2Q9State`]
@@ -29,6 +32,10 @@ pub trait LBMMeta {
 pub struct LBMD2Q9Config {
     /// The shape of the simulation: `[HEIGHT, WIDTH]`
     pub shape: [usize; 2],
+
+    /// Relaxation Param
+    #[config(default = "RelaxationParam::Tau(0.5)")]
+    pub relaxation: RelaxationParam,
 }
 
 impl LBMMeta for LBMD2Q9Config {
@@ -41,17 +48,19 @@ impl LBMD2Q9Config {
     /// Initialize a [`LBMD2Q9State`] module.
     pub fn init<B: Backend>(
         self,
-        fill_value: f32,
         device: &B::Device,
     ) -> LBMD2Q9State<B> {
         let [h, w] = self.shape;
-        let state = Tensor::<B, 4>::full([h, w, 3, 3], fill_value, device);
+        let state = Tensor::<B, 4>::zeros([h, w, 3, 3], device);
         let solid_mask = Tensor::<B, 2>::zeros([h, w], device).bool();
 
         LBMD2Q9State {
             step_count: 0,
             dist: state,
             solid_mask,
+            e: direction_vectors(device),
+            w: weight_matrix(device),
+            relaxation: Ignored(self.relaxation),
         }
     }
 }
@@ -69,6 +78,15 @@ pub struct LBMD2Q9State<B: Backend> {
 
     /// The solid mask: ``[H, W]``
     pub solid_mask: Tensor<B, 2, Bool>,
+
+    /// Direction Vectors
+    pub e: Tensor<B, 3>,
+
+    /// Weight Matrix
+    pub w: Tensor<B, 2>,
+
+    /// Relaxation Param
+    pub relaxation: Ignored<RelaxationParam>,
 }
 
 impl<B: Backend> LBMMeta for LBMD2Q9State<B> {
@@ -84,6 +102,11 @@ impl<B: Backend> LBMD2Q9State<B> {
         self.dist.device()
     }
 
+    /// Get the datatype of the state.
+    pub fn dtype(&self) -> DType {
+        self.dist.dtype()
+    }
+
     /// Get the current simulation step count.
     pub fn step_count(&self) -> u64 {
         self.step_count
@@ -96,6 +119,8 @@ impl<B: Backend> LBMD2Q9State<B> {
     ) -> Self {
         Self {
             dist: self.dist.cast(dtype),
+            e: self.e.cast(dtype),
+            w: self.w.cast(dtype),
             ..self
         }
     }
@@ -111,5 +136,24 @@ impl<B: Backend> LBMD2Q9State<B> {
     /// Reset the simulation step count to zero.
     pub fn reset_step_count(&mut self) {
         self.set_step_count(0)
+    }
+
+    /// Advance the world simulation by one step.
+    pub fn advance_step(&mut self) {
+        let dist = bgk_collision(
+            self.dist.clone(),
+            self.e.clone(),
+            self.w.clone(),
+            *self.relaxation,
+        );
+
+        let interior = stream_interior_cells(dist.clone(), self.solid_mask.clone());
+
+        let dist = dist.slice_assign(s![1..-1, 1..-1], interior);
+
+        let dist = dist.clone().mask_fill(dist.is_finite().bool_not(), 0.0);
+
+        self.dist = dist;
+        self.step_count += 1;
     }
 }

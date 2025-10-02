@@ -351,13 +351,13 @@ mod tests {
         let dist: Tensor<B, 4> = Tensor::from_data(
             [
                 [
-                [[1., 2., 3.], [4., 5., 6.], [7., 8., 9.]],
-                [[10., 20., 30.], [40., 50., 60.], [70., 80., 90.]],
-            ],
+                    [[1., 2., 3.], [4., 5., 6.], [7., 8., 9.]],
+                    [[10., 20., 30.], [40., 50., 60.], [70., 80., 90.]],
+                ],
                 [
                     [[9., 10., 3.], [4., 5., 6.], [7., 8., 9.]],
                     [[0., -2., 0.], [0., 8., 0.], [0., 0., 0.]],
-                ]
+                ],
             ],
             &device,
         );
@@ -365,10 +365,7 @@ mod tests {
         let rho = population_density(dist.clone());
 
         rho.to_data().assert_approx_eq::<f32>(
-            &Tensor::<B, 2>::from_data(
-                [[45., 450.], [61., 6.]],
-                &device,
-            ).to_data(),
+            &Tensor::<B, 2>::from_data([[45., 450.], [61., 6.]], &device).to_data(),
             Tolerance::default(),
         )
     }
@@ -388,8 +385,9 @@ mod tests {
                     [[-1., -1.], [-1., 0.], [-1., 1.]],
                 ],
                 &device,
-            ).to_data(),
-            false
+            )
+            .to_data(),
+            false,
         );
     }
 
@@ -408,23 +406,22 @@ mod tests {
                     [1.0 / 36.0, 1.0 / 9.0, 1.0 / 36.0],
                 ],
                 &device,
-            ).to_data(),
-            false
+            )
+            .to_data(),
+            false,
         );
     }
 
     #[test]
-    fn test_macroscopic_momentum() {
+    fn test_momentum_and_velocity() {
         type B = Cuda;
         let device = Default::default();
 
         let dist: Tensor<B, 4> = Tensor::from_data(
-            [
-                [
-                    [[1., 0., 0.], [0., 10., 0.], [0., 0., 0.]],
-                    [[1., 2., 3.], [4., 10., 5.], [6., 7., 8.]],
-                ],
-            ],
+            [[
+                [[1., 0., 0.], [0., 10., 0.], [0., 0., 0.]],
+                [[1., 2., 3.], [4., 10., 5.], [6., 7., 8.]],
+            ]],
             &device,
         );
 
@@ -432,15 +429,42 @@ mod tests {
 
         let momentum = macroscopic_momentum(dist.clone(), e.clone());
 
-        momentum.to_data().assert_approx_eq::<f32>(
-            &Tensor::<B, 3>::from_data(
-                [
-                    [[1., -1.], [-15., 5.]],
-                ],
-                &device,
-            ).to_data(),
+        momentum.clone().to_data().assert_approx_eq::<f32>(
+            &Tensor::<B, 3>::from_data([[[1., -1.], [-15., 5.]]], &device).to_data(),
             Tolerance::default(),
-        )
+        );
+
+        let rho = population_density(dist.clone());
+
+        let rho_data = rho.to_data().to_vec::<f32>().unwrap();
+
+        let velocity = macroscopic_velocity(dist.clone(), rho.clone(), e.clone());
+
+        velocity.clone().to_data().assert_approx_eq::<f32>(
+            &Tensor::<B, 3>::from_data(
+                [[
+                    [1. / rho_data[0], -1. / rho_data[0]],
+                    [-15. / rho_data[1], 5. / rho_data[1]],
+                ]],
+                &device,
+            )
+            .to_data(),
+            Tolerance::default(),
+        );
+
+        let v_sq = velocity_squared(velocity.clone());
+
+        v_sq.clone().to_data().assert_approx_eq::<f32>(
+            &Tensor::<B, 2>::from_data(
+                [[
+                    (1. + 1.) / rho_data[0].powi(2),
+                    (15. * 15. + 5. * 5.) / rho_data[1].powi(2),
+                ]],
+                &device,
+            )
+            .to_data(),
+            Tolerance::default(),
+        );
     }
 
     #[test]

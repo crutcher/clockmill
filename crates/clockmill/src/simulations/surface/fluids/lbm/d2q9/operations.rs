@@ -200,6 +200,7 @@ pub fn equilibrium<B: Backend>(
 }
 
 /// Wrapper for the BGK collision operator.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RelaxationParam {
     /// Relaxation frequency (1/tau), typically in (0, 2)
     Omega(f64),

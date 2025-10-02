@@ -19,7 +19,7 @@ gl = {workspace = true}
 workspace = true
 
 [features]
-default = ["wgpu"]
+default = ["cuda"]
 cuda = ["burn/cuda"]
 metal = ["burn/metal"]
 wgpu = ["burn/wgpu"]

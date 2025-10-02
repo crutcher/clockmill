@@ -1,10 +1,7 @@
 use app::FlowVisApp;
-use burn::prelude::Backend;
+use burn::prelude::{Backend, s};
 use clap::Parser;
-use clockmill::simulations::surface::fluids::lattice_boltzmann::{
-    LBMD2Q9Config, LBMD2Q9Operations, LBMD2Q9State,
-};
-use color::ColorScheme;
+use clockmill::simulations::surface::fluids::lattice_boltzmann::{LBMD2Q9Config, LBMD2Q9State};
 use glutin_window::GlutinWindow as Window;
 use opengl_graphics::{GlGraphics, OpenGL};
 use piston::event_loop::{EventSettings, Events};
@@ -13,7 +10,6 @@ use piston::window::WindowSettings;
 use piston::{EventLoop, OpenGLWindow};
 
 mod app;
-mod color;
 
 fn parse_shape(s: &str) -> Result<[usize; 2], String> {
     if s.contains(",") {
@@ -39,40 +35,24 @@ fn parse_shape(s: &str) -> Result<[usize; 2], String> {
 #[command(long_about = None)]
 pub struct Args {
     /// The grid shape as `HEIGHT,WIDTH`, or `SIZE`.
-    #[arg(long, value_parser=parse_shape, default_value="400,600")]
+    #[arg(long, value_parser=parse_shape, default_value="100")]
     pub grid_shape: [usize; 2],
 
     /// The number of steps to take per frame.
-    #[arg(long, default_value_t = 2)]
+    #[arg(long, default_value_t = 1)]
     pub step_rate: usize,
 
     /// The number of steps to skip on init.
     #[arg(long, default_value_t = 0)]
     pub init_skip_steps: usize,
 
-    /// The initial density of the grid.
-    #[arg(long, default_value_t = 0.03)]
-    pub initial_density: f64,
-
-    /// The noise to apply to the grid on each step.
-    #[arg(long, default_value_t = 0.0001)]
-    pub update_noise: f64,
-
     /// The max frames per second.
     #[arg(long, default_value_t = 1)]
     pub fps: u64,
 
     /// The initial window zoom.
-    #[arg(long, default_value_t = 1.5)]
+    #[arg(long, default_value_t = 2.5)]
     pub zoom: f64,
-
-    /// The opacity between frames.
-    #[arg(long, default_value_t = 0.95)]
-    pub opacity: f32,
-
-    /// The color scheme to use.
-    #[arg(long, default_value = "inverted")]
-    pub color_scheme: ColorScheme,
 }
 
 fn main() {
@@ -91,8 +71,6 @@ fn main() {
 
 fn run<B: Backend>(args: &Args) {
     let device = Default::default();
-
-    let world_state: LBMD2Q9State<B> = LBMD2Q9Config::new(args.grid_shape).init(&device);
 
     // Change this to OpenGL::V2_1 if not working.
     let opengl = OpenGL::V3_2;
@@ -113,14 +91,18 @@ fn run<B: Backend>(args: &Args) {
     // Load the OpenGL function pointers
     gl::load_with(|s| window.get_proc_address(s) as *const _);
 
+    let mut world_state: LBMD2Q9State<B> = LBMD2Q9Config::new(args.grid_shape).init(&device);
+    world_state.dist = world_state
+        .dist
+        .slice_fill(s![.., .., 1, 1], 1.0)
+        .slice_fill(s![40, 50, 1, 1], 10.0)
+        .slice_fill(s![50, 50, 1, 1], 10.0);
+
     // Create a new game and run it.
     let mut app = FlowVisApp {
         gl: GlGraphics::new(opengl),
         world_state,
-        ops: LBMD2Q9Operations::init(&device),
-        _color_scheme: args.color_scheme,
         step_rate: args.step_rate,
-        opacity: args.opacity,
     };
     for _ in 0..args.init_skip_steps {
         app.advance_frame();

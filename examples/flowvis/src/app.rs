@@ -1,8 +1,8 @@
-use crate::color::ColorScheme;
 use burn::prelude::{Backend, s};
-use burn::tensor::DType::F32;
-use clockmill::simulations::surface::fluids::lattice_boltzmann::{
-    EquilibriumTerms, LBMD2Q9Operations, LBMD2Q9State, LBMMeta,
+use clockmill::simulations::surface::fluids::lattice_boltzmann::{LBMD2Q9State, LBMMeta};
+use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{
+    RelaxationParam, bgk_collision, direction_vectors, equilibrium, macroscopic_velocity,
+    population_density, stream_distribution_interior, weight_matrix,
 };
 use opengl_graphics::GlGraphics;
 use piston::{RenderArgs, UpdateArgs};
@@ -10,10 +10,7 @@ use piston::{RenderArgs, UpdateArgs};
 pub struct FlowVisApp<B: Backend> {
     pub gl: GlGraphics, // OpenGL drawing backend.
     pub world_state: LBMD2Q9State<B>,
-    pub ops: LBMD2Q9Operations<B>,
-    pub _color_scheme: ColorScheme,
     pub step_rate: usize,
-    pub opacity: f32,
 }
 
 impl<B: Backend> FlowVisApp<B> {
@@ -24,32 +21,24 @@ impl<B: Backend> FlowVisApp<B> {
         use graphics::*;
 
         let world_state = &self.world_state;
-        let EquilibriumTerms { u_sq, .. } = self
-            .ops
-            .equilibrium_partials(world_state.velocity.clone())
-            .equi_terms();
+        let [h, w] = world_state.shape();
+        let dist = &world_state.dist;
 
-        let u = u_sq.sqrt().squeeze_dims::<2>(&[2, 3]);
-        let shape = u.shape();
-        let u_max = u.clone().max().expand(shape);
-        let u_norm = u.div(u_max);
+        let cells = population_density(dist.clone()).add_scalar(1.0).log();
+        let max_rho = cells.clone().max_dim(1).max_dim(1);
+        let cells = cells / max_rho;
+        let cells = cells.to_data().into_vec::<f32>().unwrap();
+        assert_eq!(cells.len(), h * w);
 
-        let u_norm = u_norm.cast(F32);
-
-        let [h, w] = self.world_state.shape();
         let [win_w, win_h] = args.viewport().draw_size;
         let draw_scale = [(win_w as f64) / (w as f64), (win_h as f64) / (h as f64)];
-
-        let u_norm = u_norm.into_data();
-        let u_norm_slice = u_norm.as_slice::<f32>().unwrap();
 
         self.gl.draw(args.viewport(), |c, gl| {
             for h_idx in 0..h {
                 for w_idx in 0..w {
-                    let v = u_norm_slice[h_idx * w + w_idx];
+                    let v = cells[h_idx * w + w_idx];
 
-                    let mut color = [v, v, v, 1.0];
-                    color[3] *= self.opacity;
+                    let color = [v, v, v, 1.0];
 
                     let pos = [0., 0., draw_scale[0], draw_scale[1]];
 
@@ -71,20 +60,27 @@ impl<B: Backend> FlowVisApp<B> {
     }
 
     pub fn advance_frame(&mut self) {
-        let tau = 0.55;
-        for _ in 0..self.step_rate {
-            let state = self
-                .world_state
-                .velocity
-                .clone()
-                .slice_fill(s![0..20, 0, .., 2], 0.5);
-            let state = self.ops.collision(state, tau);
-            let interior = self
-                .ops
-                .interior_streaming(state.clone(), self.world_state.solid_mask.clone());
-            let state = state.slice_assign(s![1..-1, 1..-1, .., ..], interior);
+        let relaxation = RelaxationParam::Omega(0.1);
 
-            self.world_state.velocity = state;
+        for _ in 0..self.step_rate {
+            let device = self.world_state.device();
+            let dist = self.world_state.dist.clone();
+
+            let rho = population_density(dist.clone());
+            let e = direction_vectors(&device);
+            let w = weight_matrix(&device);
+            let u = macroscopic_velocity(dist.clone(), rho.clone(), e.clone());
+
+            let eq = equilibrium(rho.clone(), u.clone(), e.clone(), w.clone());
+
+            let dist = bgk_collision(dist.clone(), eq.clone(), relaxation);
+
+            let interior =
+                stream_distribution_interior(dist.clone(), self.world_state.solid_mask.clone());
+
+            let dist = dist.slice_assign(s![1..-1, 1..-1], interior);
+
+            self.world_state.dist = dist;
         }
     }
 }

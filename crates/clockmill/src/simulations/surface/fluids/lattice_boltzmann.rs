@@ -51,7 +51,7 @@ impl LBMD2Q9Config {
 
         LBMD2Q9State {
             step_count: 0,
-            velocity: state,
+            dist: state,
             solid_mask,
         }
     }
@@ -66,7 +66,7 @@ pub struct LBMD2Q9State<B: Backend> {
     /// The grid velocity: ``[H, W, UY=3, UX=3]``
     /// Here the 0-9 velocity terms are unfolded
     /// into the ``UY`` and ``UX`` dims.
-    pub velocity: Tensor<B, 4>,
+    pub dist: Tensor<B, 4>,
 
     /// The solid mask: ``[H, W]``
     pub solid_mask: Tensor<B, 2, Bool>,
@@ -74,7 +74,7 @@ pub struct LBMD2Q9State<B: Backend> {
 
 impl<B: Backend> LBMMeta for LBMD2Q9State<B> {
     fn shape(&self) -> [usize; 2] {
-        let dims = &self.velocity.shape().dims;
+        let dims = &self.dist.shape().dims;
         [dims[0], dims[1]]
     }
 }
@@ -82,7 +82,7 @@ impl<B: Backend> LBMMeta for LBMD2Q9State<B> {
 impl<B: Backend> LBMD2Q9State<B> {
     /// Get the device the module is on.
     pub fn device(&self) -> B::Device {
-        self.velocity.device()
+        self.dist.device()
     }
 
     /// Get the current simulation step count.
@@ -96,7 +96,7 @@ impl<B: Backend> LBMD2Q9State<B> {
         dtype: DType,
     ) -> Self {
         Self {
-            velocity: self.velocity.cast(dtype),
+            dist: self.dist.cast(dtype),
             ..self
         }
     }
@@ -642,7 +642,7 @@ mod tests {
         assert_eq!(lbm.shape(), [10, 12]);
         assert_eq!(lbm.step_count(), 0);
         assert_eq!(lbm.device(), device);
-        assert_eq!(lbm.velocity.shape().dims(), [10, 12, 3, 3]);
+        assert_eq!(lbm.dist.shape().dims(), [10, 12, 3, 3]);
     }
 
     #[test]

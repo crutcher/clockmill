@@ -1,6 +1,9 @@
-//! # D2Q9 LBM Operations
+//! # D2Q9 Lattice-Boltzmann Method Operations
 //!
 //! This module contains the operations used by the D2Q9 LBM simulation.
+//!
+//! See:
+//! * [Wikipedia](https://en.wikipedia.org/wiki/Lattice_Boltzmann_methods).
 use crate::compat::operations::sum_dims;
 use bimm_contracts::{assert_shape_contract_periodically, unpack_shape_contract};
 use burn::Tensor;

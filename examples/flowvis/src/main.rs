@@ -1,7 +1,7 @@
 use burn::prelude::{Backend, s};
 use burn::tensor::DType::F64;
 use clap::Parser;
-use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{moments, velocity_squared};
+use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{moments, velocity_squared, RelaxationParam};
 use clockmill::simulations::surface::fluids::lbm::d2q9::world::{
     LBMD2Q9Config, LBMD2Q9State, LBMMeta,
 };
@@ -92,7 +92,9 @@ fn run<B: Backend>(args: &Args) {
     // Load the OpenGL function pointers
     gl::load_with(|s| window.get_proc_address(s) as *const _);
 
-    let mut world_state: LBMD2Q9State<B> = LBMD2Q9Config::new(args.grid_shape).init(&device);
+    let mut world_state: LBMD2Q9State<B> = LBMD2Q9Config::new(args.grid_shape)
+        .with_relaxation(RelaxationParam::Omega(1.0))
+        .init(&device);
     world_state.dist = world_state
         .dist
         .slice_fill(s![40, 60, 1, 1], 1000.0)

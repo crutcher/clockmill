@@ -266,7 +266,13 @@ pub fn relaxed_sum<B: Backend>(
     dist_b: Tensor<B, 4>,
     relaxation: RelaxationParam,
 ) -> Tensor<B, 4> {
+    // A + (B - A) / T
+    // A + (B - A) O
+    // A + B O - A O
+    // A ( 1 - O ) + B O
+
     let omega = relaxation.as_omega_value();
+    assert!(omega >= 0.0 && omega <= 2.0, "omega must be in [0, 2.0] range");
     dist_a * (1.0 - omega) + dist_b * omega
 }
 

@@ -35,7 +35,7 @@ fn bench_lbm_d2q9(c: &mut Criterion) {
             b.iter(|| {
                 let dist_col = naive_bgk_collision(dist.clone(), e.clone(), w.clone(), relaxation);
 
-                black_box(dist_col);
+                black_box(dist_col.mean().into_scalar());
             })
         });
 
@@ -49,7 +49,7 @@ fn bench_lbm_d2q9(c: &mut Criterion) {
                     relaxation,
                 );
 
-                black_box(dist_col);
+                black_box(dist_col.mean().into_scalar());
             })
         });
 
@@ -72,7 +72,7 @@ fn bench_lbm_d2q9(c: &mut Criterion) {
                 let stream_result = stream_interior_cells(dist.clone());
                 let dist = dist.slice_assign(s![1..-1, 1..-1], stream_result);
 
-                black_box(dist);
+                black_box(dist.mean().into_scalar());
             })
         });
     }

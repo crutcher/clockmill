@@ -1,5 +1,5 @@
 use burn::prelude::{Backend, s};
-use burn::tensor::DType::F64;
+use burn::tensor::DType::F32;
 use clap::Parser;
 use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{RelaxationParam, moments};
 use clockmill::simulations::surface::fluids::lbm::d2q9::world::{
@@ -54,6 +54,10 @@ pub struct Args {
     /// The number of steps to skip on init.
     #[arg(long, default_value_t = 0)]
     pub init_skip_steps: usize,
+
+    /// The collision relaxation tau.
+    #[arg(long, default_value_t = 1.0)]
+    pub tau: f64,
 }
 
 fn main() {
@@ -93,7 +97,7 @@ fn run<B: Backend>(args: &Args) {
     gl::load_with(|s| window.get_proc_address(s) as *const _);
 
     let mut world_state: LBMD2Q9State<B> = LBMD2Q9Config::new(args.grid_shape)
-        .with_relaxation(RelaxationParam::Omega(1.0))
+        .with_relaxation(RelaxationParam::Tau(args.tau))
         .init(&device);
     world_state.dist = world_state
         .dist
@@ -108,7 +112,7 @@ fn run<B: Backend>(args: &Args) {
         .slice_fill(s![1, ..], true)
         .slice_fill(s![-2, ..], true);
 
-    let world_state = world_state.to_dtype(F64);
+    let world_state = world_state.to_dtype(F32);
 
     // Create a new game and run it.
     let mut app = FlowVisApp {
@@ -159,14 +163,14 @@ impl<B: Backend> FlowVisApp<B> {
         let cells = (cells / scale).clamp(0.0, 1.0);
         // let cells = cells.mul_scalar(3.14 / 2.0).sin();
 
-        let cells = cells.to_data().into_vec::<f64>().unwrap();
+        let cells = cells.to_data().into_vec::<f32>().unwrap();
         assert_eq!(cells.len(), h * w * 2);
 
         let mut result = vec![vec![(0.0, 0.0); w]; h];
         for y in 0..h {
             for x in 0..w {
-                let uy: f32 = cells[(y * w * 2) + x * 2] as f32;
-                let ux: f32 = cells[(y * w * 2) + x * 2 + 1] as f32;
+                let uy: f32 = cells[(y * w * 2) + x * 2];
+                let ux: f32 = cells[(y * w * 2) + x * 2 + 1];
                 result[y][x] = (uy, ux);
             }
         }

@@ -55,6 +55,12 @@ impl LBMD2Q9Config {
         let state = Tensor::<B, 4>::zeros([h, w, 3, 3], device);
         let solid_mask = Tensor::<B, 2>::zeros([h, w], device).bool();
 
+        let omega = self.relaxation.as_omega_value();
+        assert!(
+            omega.is_finite() && omega > 0.0,
+            "Invalid relaxation param: omega={omega}"
+        );
+
         LBMD2Q9State {
             step_count: 0,
             dist: state,

@@ -272,7 +272,10 @@ pub fn relaxed_sum<B: Backend>(
     // A - A O + B O
     // A ( 1 - O ) + B O
     let omega = relaxation.as_omega_value();
-    assert!(omega >= 0.0 && omega <= 2.0, "omega must be in [0, 2.0] range");
+    assert!(
+        (0.0..=2.0).contains(&omega),
+        "omega must be in [0, 2.0] range"
+    );
     dist_a * (1.0 - omega) + dist_b * omega
 }
 
@@ -328,19 +331,17 @@ pub fn stream_interior_cells<B: Backend>(
 
     let result: Tensor<B, 4> = Tensor::cat(
         (0..3)
-            .map(|hk_idx| -> Tensor<B, 4> {
-                // Select the complimentary vy flow in that neighbor.
-                let vy_source_idx = 2 - hk_idx;
+            .map(|y| -> Tensor<B, 4> {
+                let source_y = 2 - y;
 
                 Tensor::cat(
                     (0..3)
-                        .map(|wk_idx| -> Tensor<B, 4> {
-                            // Select the complimentary vx flow in that neighbor.
-                            let vx_source_idx = 2 - wk_idx;
+                        .map(|x| -> Tensor<B, 4> {
+                            let source_x = 2 - x;
 
                             windows
                                 .clone()
-                                .slice(s![.., .., vy_source_idx, vx_source_idx, hk_idx, wk_idx])
+                                .slice(s![.., .., source_y, source_x, y, x])
                                 .squeeze_dims::<4>(&[-2, -1])
                         })
                         .collect(),

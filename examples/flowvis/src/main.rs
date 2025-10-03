@@ -1,9 +1,7 @@
 use burn::prelude::{Backend, s};
 use burn::tensor::DType::F64;
 use clap::Parser;
-use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{
-    RelaxationParam, moments, velocity_squared,
-};
+use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{RelaxationParam, moments};
 use clockmill::simulations::surface::fluids::lbm::d2q9::world::{
     LBMD2Q9Config, LBMD2Q9State, LBMMeta,
 };
@@ -38,8 +36,16 @@ fn parse_shape(s: &str) -> Result<[usize; 2], String> {
 #[command(long_about = None)]
 pub struct Args {
     /// The grid shape as `HEIGHT,WIDTH`, or `SIZE`.
-    #[arg(long, value_parser=parse_shape, default_value="200")]
+    #[arg(long, value_parser=parse_shape, default_value="150")]
     pub grid_shape: [usize; 2],
+
+    /// The max frames per second.
+    #[arg(long, default_value_t = 10)]
+    pub fps: u64,
+
+    /// The initial window zoom.
+    #[arg(long, default_value_t = 3.0)]
+    pub zoom: f64,
 
     /// The number of steps to take per frame.
     #[arg(long, default_value_t = 1)]
@@ -48,14 +54,6 @@ pub struct Args {
     /// The number of steps to skip on init.
     #[arg(long, default_value_t = 0)]
     pub init_skip_steps: usize,
-
-    /// The max frames per second.
-    #[arg(long, default_value_t = 10)]
-    pub fps: u64,
-
-    /// The initial window zoom.
-    #[arg(long, default_value_t = 10.0)]
-    pub zoom: f64,
 }
 
 fn main() {
@@ -99,8 +97,16 @@ fn run<B: Backend>(args: &Args) {
         .init(&device);
     world_state.dist = world_state
         .dist
-        .slice_fill(s![40, 60, 1, 1], 1000.0)
-        .slice_fill(s![60, 40, 1, 1], 800.0);
+        .slice_fill(s![50..60, 10..20, 0, 1], 1000.0)
+        .slice_fill(s![70..90, 90..100, 2, 1], 800.0);
+
+    world_state.solid_mask = world_state
+        .solid_mask
+        .slice_fill(s![30, 40..60], true)
+        .slice_fill(s![.., 1], true)
+        .slice_fill(s![.., -2], true)
+        .slice_fill(s![1, ..], true)
+        .slice_fill(s![-2, ..], true);
 
     let world_state = world_state.to_dtype(F64);
 
@@ -135,33 +141,50 @@ pub struct FlowVisApp<B: Backend> {
 }
 
 impl<B: Backend> FlowVisApp<B> {
-    pub fn vis_cells(&self) -> Vec<Vec<f32>> {
+    pub fn vis_cells(&self) -> Vec<Vec<(f32, f32)>> {
         let [h, w] = self.world_state.shape();
         let dist = &self.world_state.dist;
 
         let e = self.world_state.e.clone();
 
         let (_rho, u) = moments(dist.clone(), e.clone());
-        let u_sq = velocity_squared(u.clone());
 
-        let cells = u_sq.sqrt();
-        let scale = 100.0;
-        // let cells_max = cells.clone().max().into_scalar();
+        // let u_sq = velocity_squared(u.clone());
+        // let cells = u_sq.sqrt();
+
+        let cells = u;
+        let scale = 10.0;
+        // let scale = cells.clone().max().into_scalar();
 
         let cells = (cells / scale).clamp(0.0, 1.0);
-        let cells = cells.mul_scalar(3.14 / 2.0).sin();
+        // let cells = cells.mul_scalar(3.14 / 2.0).sin();
 
         let cells = cells.to_data().into_vec::<f64>().unwrap();
-        assert_eq!(cells.len(), h * w);
+        assert_eq!(cells.len(), h * w * 2);
 
-        let mut vis_cells = vec![vec![0.0; w]; h];
+        let mut result = vec![vec![(0.0, 0.0); w]; h];
         for y in 0..h {
             for x in 0..w {
-                let cell: f32 = cells[(y * w) + x] as f32;
-                vis_cells[y][x] = cell;
+                let uy: f32 = cells[(y * w * 2) + x * 2] as f32;
+                let ux: f32 = cells[(y * w * 2) + x * 2 + 1] as f32;
+                result[y][x] = (uy, ux);
             }
         }
-        vis_cells
+        result
+    }
+
+    pub fn solid_cells(&self) -> Vec<Vec<bool>> {
+        let [h, w] = self.world_state.shape();
+        let mask = &self.world_state.solid_mask;
+
+        let cells = mask.to_data().into_vec::<u8>().unwrap();
+        let mut result = vec![vec![false; w]; h];
+        for y in 0..h {
+            for x in 0..w {
+                result[y][x] = cells[(y * w) + x] == 1;
+            }
+        }
+        result
     }
 
     pub fn render(
@@ -171,6 +194,7 @@ impl<B: Backend> FlowVisApp<B> {
         use graphics::*;
 
         let vis_cells = self.vis_cells();
+        let solid_cells = self.solid_cells();
 
         let [h, w] = self.world_state.shape();
         let [view_width, view_height] = args.viewport().draw_size;
@@ -183,12 +207,15 @@ impl<B: Backend> FlowVisApp<B> {
         self.gl.draw(args.viewport(), |c, gl| {
             for y in 0..h {
                 for x in 0..w {
-                    let cell = vis_cells[y][x];
+                    let (uy, ux) = vis_cells[y][x];
+                    let is_solid = solid_cells[y][x];
 
-                    let color = if cell.is_finite() {
-                        [0., cell, 1.0, 0.25]
+                    let color = if is_solid {
+                        [1., 1., 1., 1.]
+                    } else if uy.is_finite() && ux.is_finite() {
+                        [0., uy, ux, 1.]
                     } else {
-                        [1., 0., 0., 1.]
+                        [0., 0., 0., 1.]
                     };
 
                     let pos = [0., 0., x_step, y_step];

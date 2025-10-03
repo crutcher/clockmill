@@ -40,7 +40,7 @@ fn bench_lbm_d2q9(c: &mut Criterion) {
 
         group.bench_function(format!("{:?} streaming", dtype).as_str(), |b| {
             b.iter(|| {
-                let stream_result = stream_interior_cells(dist.clone(), solid_mask.clone());
+                let stream_result = stream_interior_cells(dist.clone());
 
                 black_box(stream_result);
             })
@@ -49,7 +49,7 @@ fn bench_lbm_d2q9(c: &mut Criterion) {
         group.bench_function(format!("{:?} update", dtype).as_str(), |b| {
             b.iter(|| {
                 let dist = bgk_collision(dist.clone(), e.clone(), w.clone(), relaxation);
-                let stream_result = stream_interior_cells(dist.clone(), solid_mask.clone());
+                let stream_result = stream_interior_cells(dist.clone());
                 let dist = dist.slice_assign(s![1..-1, 1..-1], stream_result);
 
                 black_box(dist);

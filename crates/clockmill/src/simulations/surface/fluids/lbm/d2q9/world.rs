@@ -140,16 +140,31 @@ impl<B: Backend> LBMD2Q9State<B> {
 
     /// Advance the world simulation by one step.
     pub fn advance_step(&mut self) {
+        let pre_collision = self.dist.clone();
+
         let dist = bgk_collision(
-            self.dist.clone(),
+            pre_collision.clone(),
             self.e.clone(),
             self.w.clone(),
             *self.relaxation,
         );
 
-        let interior = stream_interior_cells(dist.clone(), self.solid_mask.clone());
+        let dist = dist.mask_where(
+            self.solid_mask.clone().unsqueeze_dims(&[-1, -1]),
+            pre_collision,
+        );
+
+        let interior = stream_interior_cells(dist.clone());
 
         let dist = dist.slice_assign(s![1..-1, 1..-1], interior);
+
+        /*
+        let inflow = (Tensor::<B, 4>::ones([1, 1, 1, 1], &self.device()) * 10.0).cast(self.dtype());
+        let outflow = Tensor::<B, 4>::zeros([1, 1, 1, 1], &self.device()).cast(self.dtype());
+        let dist = dist
+            .slice_assign(s![10, 10, 1, 1], inflow)
+            .slice_assign(s![90, 90, 1, 1], outflow);
+         */
 
         let dist = dist.clone().mask_fill(dist.is_finite().bool_not(), 0.0);
 

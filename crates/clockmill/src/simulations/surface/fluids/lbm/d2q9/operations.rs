@@ -7,14 +7,14 @@
 use crate::compat::operations::{fast_powi_2, sum_dims};
 use bimm_contracts::{assert_shape_contract_periodically, unpack_shape_contract};
 use burn::Tensor;
-use burn::prelude::{Backend, Bool, s};
+use burn::prelude::{Backend, s};
 use burn::serde::{Deserialize, Serialize};
 
 /// Population Density
 ///
 /// # Arguments
 ///
-/// - `dist`: a ``[H, W, Y=3, X=3]`` population distribution.
+/// - `dist`: a ``[H, W, VY=3, VX=3]`` population distribution.
 ///
 /// # Returns
 ///
@@ -27,7 +27,7 @@ pub fn density<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 2> {
 ///
 /// # Returns
 ///
-/// The ``[Y=3, X=3, (Y, X)=2]`` direction vectors.
+/// The ``[VY=3, VX=3, (VY, VX)=2]`` direction vectors.
 pub fn direction_vectors<B: Backend>(device: &B::Device) -> Tensor<B, 3> {
     Tensor::<B, 3>::from_data(
         [
@@ -43,7 +43,7 @@ pub fn direction_vectors<B: Backend>(device: &B::Device) -> Tensor<B, 3> {
 ///
 /// # Returns
 ///
-/// The ``[Y=3, X=3]`` equilibrium weight matrix.
+/// The ``[VY=3, VX=3]`` equilibrium weight matrix.
 pub fn weight_matrix<B: Backend>(device: &B::Device) -> Tensor<B, 2> {
     Tensor::<B, 2>::from_data(
         [
@@ -61,7 +61,7 @@ pub fn weight_matrix<B: Backend>(device: &B::Device) -> Tensor<B, 2> {
 ///
 /// # Arguments
 ///
-/// - `dist`: a ``[H, W, Y, X]`` population distribution.
+/// - `dist`: a ``[H, W, VY, VX]`` population distribution.
 /// - `e`: the D2Q9 direction vectors.
 ///
 /// # Returns
@@ -101,7 +101,7 @@ pub fn normalize_velocity<B: Backend>(
 ///
 /// # Arguments
 ///
-/// - `dist`: a ``[H, W, Y, X]`` population distribution.
+/// - `dist`: a ``[H, W, VY, VX]`` population distribution.
 /// - `e`: the D2Q9 direction vectors.
 ///
 /// # Returns
@@ -119,7 +119,7 @@ pub fn macroscopic_velocity<B: Backend>(
 ///
 /// # Arguments
 ///
-/// - `dist`: a ``[H, W, Y, X]`` population distribution.
+/// - `dist`: a ``[H, W, VY, VX]`` population distribution.
 /// - `e`: the D2Q9 direction vectors.
 ///
 /// # Returns
@@ -254,13 +254,13 @@ impl RelaxationParam {
 /// Computes ``dist_a * (1 - omega) + dist_b * omega``.
 ///
 /// # Arguments
-/// - `dist_a`: a `[H, W, Y=3, X=3]` distribution.
-/// - `dist_b`: a `[H, W, Y=3, X=3]` distribution.
+/// - `dist_a`: a `[H, W, VY=3, VX=3]` distribution.
+/// - `dist_b`: a `[H, W, VY=3, VX=3]` distribution.
 /// - `relaxation`: relaxation parameter.
 ///
 /// # Returns
 ///
-/// The `[H, W, Y=3, X=3]` relaxed sum.
+/// The `[H, W, VY=3, VX=3]` relaxed sum.
 pub fn relaxed_sum<B: Backend>(
     dist_a: Tensor<B, 4>,
     dist_b: Tensor<B, 4>,
@@ -282,12 +282,12 @@ pub fn relaxed_sum<B: Backend>(
 /// Aggregate Bhatnagar-Gross-Krook collision operator.
 ///
 /// # Arguments
-/// - `dist`: `[H, W, Y=3, X=3]` current distribution
-/// - `dist_eq`: `[H, W, Y=3, X=3]` equilibrium distribution
+/// - `dist`: `[H, W, VY=3, VX=3]` current distribution
+/// - `dist_eq`: `[H, W, VY=3, VX=3]` equilibrium distribution
 /// - `relaxation`: relaxation parameter.
 ///
 /// # Returns
-/// - `[H, W, Y=3, X=3]` post-collision distribution
+/// - `[H, W, VY=3, VX=3]` post-collision distribution
 pub fn bgk_collision<B: Backend>(
     dist: Tensor<B, 4>,
     e: Tensor<B, 3>,
@@ -303,45 +303,35 @@ pub fn bgk_collision<B: Backend>(
 ///
 /// # Arguments
 ///
-/// - `dist`: a ``[H, W, V=3, U=3]`` population distribution.
-/// - `solid_mask`: a ``[H, W]`` solid mask.
+/// - `dist`: a ``[H, W, VY=3, VX=3]`` population distribution.
 ///
 /// # Returns
-///
-/// The updated distribution for the ``[H[1:-1], W[1:-1], V=3, U=3]`` interior.
-pub fn stream_interior_cells<B: Backend>(
-    dist: Tensor<B, 4>,
-    _solid_mask: Tensor<B, 2, Bool>,
-) -> Tensor<B, 4> {
+/// - The updated ``[H[1:-1], W[1:-1], VY=3, VX=3]`` interior.
+pub fn stream_interior_cells<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 4> {
     let [h, w] = unpack_shape_contract!(
-        ["H", "W", "UY", "UX"],
+        ["H", "W", "VY", "VX"],
         &dist.shape().dims,
         &["H", "W"],
-        &[("UY", 3), ("UX", 3)]
+        &[("VY", 3), ("VX", 3)]
     );
 
     // Map the state into no-copy 3x3 neighborhood windows.
+    // [H-2, W-2, V=3, U=3, VY=3, VX=3]
     let windows = dist.unfold::<5, _>(0, 3, 1).unfold::<6, _>(1, 3, 1);
-    // [H-2, W-2, V=3, U=3, HK=3, WK=3]
-
-    // TODO: implement bounce.
-    // This requires computing 3x3x2 columns;
-    // and using a where operation on the solid_mask:
-    // cell = where(mask_cell, bounce_cell, stream_cell)
 
     let result: Tensor<B, 4> = Tensor::cat(
         (0..3)
-            .map(|y| -> Tensor<B, 4> {
-                let source_y = 2 - y;
+            .map(|vy| -> Tensor<B, 4> {
+                let source_vy = 2 - vy;
 
                 Tensor::cat(
                     (0..3)
-                        .map(|x| -> Tensor<B, 4> {
-                            let source_x = 2 - x;
+                        .map(|vx| -> Tensor<B, 4> {
+                            let source_vx = 2 - vx;
 
                             windows
                                 .clone()
-                                .slice(s![.., .., source_y, source_x, y, x])
+                                .slice(s![.., .., source_vy, source_vx, vy, vx])
                                 .squeeze_dims::<4>(&[-2, -1])
                         })
                         .collect(),
@@ -353,9 +343,9 @@ pub fn stream_interior_cells<B: Backend>(
     );
 
     assert_shape_contract_periodically!(
-        ["H" - "PAD", "W" - "PAD", "UY", "UX"],
+        ["H" - "PAD", "W" - "PAD", "VY", "VX"],
         &result.shape().dims,
-        &[("H", h), ("W", w), ("PAD", 2), ("UY", 3), ("UX", 3)]
+        &[("H", h), ("W", w), ("PAD", 2), ("VY", 3), ("VX", 3)]
     );
 
     result
@@ -663,9 +653,8 @@ mod tests {
                 ],
             ],
         ], &device);
-        let solid_mask = Tensor::<B, 2>::zeros([3, 3], &device).bool();
 
-        let result = stream_interior_cells(state.clone(), solid_mask.clone());
+        let result = stream_interior_cells(state.clone());
 
         assert_eq!(result.shape().dims, vec![1, 1, 3, 3]);
 

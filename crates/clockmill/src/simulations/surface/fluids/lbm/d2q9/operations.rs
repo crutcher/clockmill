@@ -302,18 +302,47 @@ pub fn naive_bgk_collision<B: Backend>(
     relaxed_sum(dist, dist_eq, relaxation)
 }
 
-/// Applies solid-reflection updates to [`naive_bgk_collision`].
+/// Applies isotropic spherical solid reflection updates to [`naive_bgk_collision`].
+///
+/// This models every solid point as a sphere, normal to all directions.
 ///
 /// # Arguments
 /// - `pre_dist`: ``[H, W, VY=3, VX=3]`` pre-collision distribution
 /// - `naive_dist`: ``[H, W, VY=3, VX=3]`` post-collision distribution
 /// - `solid_mask`: ``[H, W]`` mask of solid locations.
-pub fn solid_reflection_collision<B: Backend>(
+///
+/// # Returns
+/// - ``[H, W, VY=3, VX=3]`` distribution.
+pub fn isotropic_spherical_reflection<B: Backend>(
     pre_dist: Tensor<B, 4>,
     naive_dist: Tensor<B, 4>,
     solid_mask: Tensor<B, 2, Bool>,
 ) -> Tensor<B, 4> {
     naive_dist.mask_where(solid_mask.unsqueeze_dims::<4>(&[-1, -1]), pre_dist)
+}
+
+/// Combined bgk collision and isotropic reflection operator.
+///
+/// This combines:
+/// - [`bgk_collision]
+/// - [`isotropic_spherical_reflection`]
+///
+/// # Arguments
+/// - `pre_dist`: ``[H, W, VY=3, VX=3]`` pre-collision distribution
+/// - `naive_dist`: ``[H, W, VY=3, VX=3]`` post-collision distribution
+/// - `solid_mask`: ``[H, W]`` mask of solid locations.
+///
+/// # Returns
+/// - ``[H, W, VY=3, VX=3]`` distribution.
+pub fn combined_isotropic_collision<B: Backend>(
+    dist: Tensor<B, 4>,
+    e: Tensor<B, 3>,
+    w: Tensor<B, 2>,
+    solid_mask: Tensor<B, 2, Bool>,
+    relaxation: RelaxationParam,
+) -> Tensor<B, 4> {
+    let naive_dist = naive_bgk_collision(dist.clone(), e, w, relaxation);
+    isotropic_spherical_reflection(dist, naive_dist, solid_mask)
 }
 
 /// Apply the streaming update step to the non-border cells of a population.

@@ -1,8 +1,8 @@
 //! # LBM D2Q9 World Module
 
 use crate::simulations::surface::fluids::lbm::d2q9::operations::{
-    RelaxationParam, direction_vectors, naive_bgk_collision, solid_reflection_collision,
-    stream_interior_cells, weight_matrix,
+    RelaxationParam, combined_isotropic_collision, direction_vectors, stream_interior_cells,
+    weight_matrix,
 };
 use burn::Tensor;
 use burn::config::Config;
@@ -141,18 +141,18 @@ impl<B: Backend> LBMD2Q9State<B> {
 
     /// Advance the world simulation by one step.
     pub fn advance_step(&mut self) {
-        let pre_dist = self.dist.clone();
-
-        let post_collision_dist = solid_reflection_collision(
-            pre_dist.clone(),
-            naive_bgk_collision(pre_dist, self.e.clone(), self.w.clone(), *self.relaxation),
+        let dist = combined_isotropic_collision(
+            self.dist.clone(),
+            self.e.clone(),
+            self.w.clone(),
             self.solid_mask.clone(),
+            *self.relaxation,
         );
 
-        let interior_updates = stream_interior_cells(post_collision_dist.clone());
+        let interior_updates = stream_interior_cells(dist.clone());
 
         // TODO: handle boundary cells.
-        let dist = post_collision_dist.slice_assign(s![1..-1, 1..-1], interior_updates);
+        let dist = dist.slice_assign(s![1..-1, 1..-1], interior_updates);
 
         // TODO: better handle of numerical instability.
         // let dist = dist.clone().mask_fill(dist.is_finite().bool_not(), 0.0);

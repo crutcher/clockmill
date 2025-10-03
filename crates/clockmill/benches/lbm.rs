@@ -4,8 +4,8 @@ use burn::prelude::{Bool, s};
 use burn::tensor::DType::{F16, F32};
 use burn::tensor::Distribution;
 use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{
-    RelaxationParam, direction_vectors, naive_bgk_collision, solid_reflection_collision,
-    stream_interior_cells, weight_matrix,
+    RelaxationParam, combined_isotropic_collision, direction_vectors,
+    isotropic_spherical_reflection, naive_bgk_collision, stream_interior_cells, weight_matrix,
 };
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
@@ -31,7 +31,7 @@ fn bench_lbm_d2q9(c: &mut Criterion) {
         let w = w.cast(dtype);
         let dist = dist.cast(dtype);
 
-        group.bench_function(format!("{:?} naive collision", dtype).as_str(), |b| {
+        group.bench_function(format!("{:?} bgk_collision", dtype).as_str(), |b| {
             b.iter(|| {
                 let dist_col = naive_bgk_collision(dist.clone(), e.clone(), w.clone(), relaxation);
 
@@ -39,12 +39,14 @@ fn bench_lbm_d2q9(c: &mut Criterion) {
             })
         });
 
-        group.bench_function(format!("{:?} collision", dtype).as_str(), |b| {
+        group.bench_function(format!("{:?} isotropic collision", dtype).as_str(), |b| {
             b.iter(|| {
-                let dist_col = solid_reflection_collision(
+                let dist_col = combined_isotropic_collision(
                     dist.clone(),
-                    naive_bgk_collision(dist.clone(), e.clone(), w.clone(), relaxation),
+                    e.clone(),
+                    w.clone(),
                     solid_mask.clone(),
+                    relaxation,
                 );
 
                 black_box(dist_col);
@@ -61,7 +63,7 @@ fn bench_lbm_d2q9(c: &mut Criterion) {
 
         group.bench_function(format!("{:?} update", dtype).as_str(), |b| {
             b.iter(|| {
-                let dist = solid_reflection_collision(
+                let dist = isotropic_spherical_reflection(
                     dist.clone(),
                     naive_bgk_collision(dist.clone(), e.clone(), w.clone(), relaxation),
                     solid_mask.clone(),

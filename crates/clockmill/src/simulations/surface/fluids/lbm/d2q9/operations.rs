@@ -7,7 +7,7 @@
 use crate::compat::operations::{fast_powi_2, sum_dims};
 use bimm_contracts::{assert_shape_contract_periodically, unpack_shape_contract};
 use burn::Tensor;
-use burn::prelude::{Backend, s};
+use burn::prelude::{Backend, Bool, s};
 use burn::serde::{Deserialize, Serialize};
 
 /// Population Density
@@ -249,13 +249,13 @@ impl RelaxationParam {
     }
 }
 
-/// The relaxation operator for [`bgk_collision`].
+/// The relaxation operator for [`naive_bgk_collision`].
 ///
 /// Computes ``dist_a * (1 - omega) + dist_b * omega``.
 ///
 /// # Arguments
-/// - `dist_a`: a `[H, W, VY=3, VX=3]` distribution.
-/// - `dist_b`: a `[H, W, VY=3, VX=3]` distribution.
+/// - `dist_a`: a ``[H, W, VY=3, VX=3]`` distribution.
+/// - `dist_b`: a ``[H, W, VY=3, VX=3]`` distribution.
 /// - `relaxation`: relaxation parameter.
 ///
 /// # Returns
@@ -279,16 +279,19 @@ pub fn relaxed_sum<B: Backend>(
     dist_a * (1.0 - omega) + dist_b * omega
 }
 
-/// Aggregate Bhatnagar-Gross-Krook collision operator.
+/// Naive aggregate Bhatnagar-Gross-Krook collision operator.
+///
+/// This operator makes no accounting for solids, reflection,
+/// or boundaries.
 ///
 /// # Arguments
-/// - `dist`: `[H, W, VY=3, VX=3]` current distribution
-/// - `dist_eq`: `[H, W, VY=3, VX=3]` equilibrium distribution
+/// - `dist`: ``[H, W, VY=3, VX=3]`` current distribution
+/// - `dist_eq`: ``[H, W, VY=3, VX=3]`` equilibrium distribution
 /// - `relaxation`: relaxation parameter.
 ///
 /// # Returns
 /// - `[H, W, VY=3, VX=3]` post-collision distribution
-pub fn bgk_collision<B: Backend>(
+pub fn naive_bgk_collision<B: Backend>(
     dist: Tensor<B, 4>,
     e: Tensor<B, 3>,
     w: Tensor<B, 2>,
@@ -297,6 +300,20 @@ pub fn bgk_collision<B: Backend>(
     let (rho, u) = moments(dist.clone(), e.clone());
     let dist_eq = equilibrium(rho, u, e, w);
     relaxed_sum(dist, dist_eq, relaxation)
+}
+
+/// Applies solid-reflection updates to [`naive_bgk_collision`].
+///
+/// # Arguments
+/// - `pre_dist`: ``[H, W, VY=3, VX=3]`` pre-collision distribution
+/// - `naive_dist`: ``[H, W, VY=3, VX=3]`` post-collision distribution
+/// - `solid_mask`: ``[H, W]`` mask of solid locations.
+pub fn solid_reflection_collision<B: Backend>(
+    pre_dist: Tensor<B, 4>,
+    naive_dist: Tensor<B, 4>,
+    solid_mask: Tensor<B, 2, Bool>,
+) -> Tensor<B, 4> {
+    naive_dist.mask_where(solid_mask.unsqueeze_dims::<4>(&[-1, -1]), pre_dist)
 }
 
 /// Apply the streaming update step to the non-border cells of a population.
@@ -549,7 +566,7 @@ mod tests {
 
         let dist = Tensor::<B, 4>::random([20, 20, 3, 3], Distribution::Uniform(0.1, 1.0), &device);
 
-        let dist_col = bgk_collision(
+        let dist_col = naive_bgk_collision(
             dist.clone(),
             e.clone(),
             w.clone(),

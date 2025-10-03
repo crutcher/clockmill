@@ -4,7 +4,8 @@ use burn::prelude::{Bool, s};
 use burn::tensor::DType::{F16, F32};
 use burn::tensor::Distribution;
 use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{
-    RelaxationParam, bgk_collision, direction_vectors, stream_interior_cells, weight_matrix,
+    RelaxationParam, direction_vectors, naive_bgk_collision, solid_reflection_collision,
+    stream_interior_cells, weight_matrix,
 };
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
@@ -30,9 +31,21 @@ fn bench_lbm_d2q9(c: &mut Criterion) {
         let w = w.cast(dtype);
         let dist = dist.cast(dtype);
 
+        group.bench_function(format!("{:?} naive collision", dtype).as_str(), |b| {
+            b.iter(|| {
+                let dist_col = naive_bgk_collision(dist.clone(), e.clone(), w.clone(), relaxation);
+
+                black_box(dist_col);
+            })
+        });
+
         group.bench_function(format!("{:?} collision", dtype).as_str(), |b| {
             b.iter(|| {
-                let dist_col = bgk_collision(dist.clone(), e.clone(), w.clone(), relaxation);
+                let dist_col = solid_reflection_collision(
+                    dist.clone(),
+                    naive_bgk_collision(dist.clone(), e.clone(), w.clone(), relaxation),
+                    solid_mask.clone(),
+                );
 
                 black_box(dist_col);
             })
@@ -48,7 +61,12 @@ fn bench_lbm_d2q9(c: &mut Criterion) {
 
         group.bench_function(format!("{:?} update", dtype).as_str(), |b| {
             b.iter(|| {
-                let dist = bgk_collision(dist.clone(), e.clone(), w.clone(), relaxation);
+                let dist = solid_reflection_collision(
+                    dist.clone(),
+                    naive_bgk_collision(dist.clone(), e.clone(), w.clone(), relaxation),
+                    solid_mask.clone(),
+                );
+
                 let stream_result = stream_interior_cells(dist.clone());
                 let dist = dist.slice_assign(s![1..-1, 1..-1], stream_result);
 

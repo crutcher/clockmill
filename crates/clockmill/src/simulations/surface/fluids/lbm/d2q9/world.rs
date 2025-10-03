@@ -1,7 +1,8 @@
 //! # LBM D2Q9 World Module
 
 use crate::simulations::surface::fluids::lbm::d2q9::operations::{
-    RelaxationParam, bgk_collision, direction_vectors, stream_interior_cells, weight_matrix,
+    RelaxationParam, direction_vectors, naive_bgk_collision, solid_reflection_collision,
+    stream_interior_cells, weight_matrix,
 };
 use burn::Tensor;
 use burn::config::Config;
@@ -140,33 +141,21 @@ impl<B: Backend> LBMD2Q9State<B> {
 
     /// Advance the world simulation by one step.
     pub fn advance_step(&mut self) {
-        let pre_collision = self.dist.clone();
+        let pre_dist = self.dist.clone();
 
-        let dist = bgk_collision(
-            pre_collision.clone(),
-            self.e.clone(),
-            self.w.clone(),
-            *self.relaxation,
+        let post_collision_dist = solid_reflection_collision(
+            pre_dist.clone(),
+            naive_bgk_collision(pre_dist, self.e.clone(), self.w.clone(), *self.relaxation),
+            self.solid_mask.clone(),
         );
 
-        let dist = dist.mask_where(
-            self.solid_mask.clone().unsqueeze_dims(&[-1, -1]),
-            pre_collision,
-        );
+        let interior_updates = stream_interior_cells(post_collision_dist.clone());
 
-        let interior = stream_interior_cells(dist.clone());
+        // TODO: handle boundary cells.
+        let dist = post_collision_dist.slice_assign(s![1..-1, 1..-1], interior_updates);
 
-        let dist = dist.slice_assign(s![1..-1, 1..-1], interior);
-
-        /*
-        let inflow = (Tensor::<B, 4>::ones([1, 1, 1, 1], &self.device()) * 10.0).cast(self.dtype());
-        let outflow = Tensor::<B, 4>::zeros([1, 1, 1, 1], &self.device()).cast(self.dtype());
-        let dist = dist
-            .slice_assign(s![10, 10, 1, 1], inflow)
-            .slice_assign(s![90, 90, 1, 1], outflow);
-         */
-
-        let dist = dist.clone().mask_fill(dist.is_finite().bool_not(), 0.0);
+        // TODO: better handle of numerical instability.
+        // let dist = dist.clone().mask_fill(dist.is_finite().bool_not(), 0.0);
 
         self.dist = dist;
         self.step_count += 1;

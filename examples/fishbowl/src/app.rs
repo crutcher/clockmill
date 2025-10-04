@@ -12,7 +12,8 @@ pub struct FishbowlApp<B: Backend> {
 
 impl<B: Backend> FishbowlApp<B> {
     pub fn get_state(&self) -> Tensor<B, 2, Bool> {
-        self.state_handle.lock().unwrap().clone()
+        let lock = self.state_handle.lock();
+        lock.unwrap().clone()
     }
 
     pub fn render(

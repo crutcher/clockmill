@@ -7,7 +7,7 @@
 use crate::compat::FRAC_1_SQRT_3;
 use crate::compat::operations::{fast_powi_2, sum_dims};
 use burn::Tensor;
-use burn::prelude::{Backend, Bool, s};
+use burn::prelude::{Backend, Bool, Int, s};
 use burn::serde::{Deserialize, Serialize};
 
 /// The speed of sound.
@@ -32,20 +32,29 @@ pub fn density<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 2> {
     sum_dims(dist, &[2, 3]).squeeze_dims::<2>(&[2, 3])
 }
 
+/// D2Q9 Direction Indices
+///
+/// # Returns
+///
+/// The ``[VY=3, VX=3, (VY, VX)=2]`` int direction indices.
+pub fn direction_indices<B: Backend>(device: &B::Device) -> Tensor<B, 3, Int> {
+    Tensor::<B, 3, Int>::from_data(
+        [
+            [[1, -1], [1, 0], [1, 1]],
+            [[0, -1], [0, 0], [0, 1]],
+            [[-1, -1], [-1, 0], [-1, 1]],
+        ],
+        device,
+    )
+}
+
 /// D2Q9 Direction Vectors
 ///
 /// # Returns
 ///
-/// The ``[VY=3, VX=3, (VY, VX)=2]`` direction vectors.
+/// The ``[VY=3, VX=3, (VY, VX)=2]`` float direction vectors.
 pub fn direction_vectors<B: Backend>(device: &B::Device) -> Tensor<B, 3> {
-    Tensor::<B, 3>::from_data(
-        [
-            [[1., -1.], [1., 0.], [1., 1.]],
-            [[0., -1.], [0., 0.], [0., 1.]],
-            [[-1., -1.], [-1., 0.], [-1., 1.]],
-        ],
-        device,
-    )
+    direction_indices(device).float()
 }
 
 /// D2Q9 Equilibrium Weight Matrix

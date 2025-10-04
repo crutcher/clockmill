@@ -1,45 +1,48 @@
-use crate::color::ColorScheme;
-use burn::prelude::Backend;
-use clockmill::simulations::surface::conway::Conway;
+use burn::Tensor;
+use burn::prelude::{Backend, Bool};
 use opengl_graphics::GlGraphics;
-use piston::{RenderArgs, UpdateArgs};
+use piston::RenderArgs;
+use std::sync::{Arc, Mutex};
 
 pub struct FishbowlApp<B: Backend> {
     pub gl: GlGraphics, // OpenGL drawing backend.
-    pub conway: Conway<B>,
-    pub update_noise: f64,
-    pub color_scheme: ColorScheme,
-    pub step_rate: usize,
+    pub state_handle: Arc<Mutex<Tensor<B, 2, Bool>>>,
     pub opacity: f32,
 }
 
 impl<B: Backend> FishbowlApp<B> {
+    pub fn get_state(&self) -> Tensor<B, 2, Bool> {
+        self.state_handle.lock().unwrap().clone()
+    }
+
     pub fn render(
         &mut self,
         args: &RenderArgs,
     ) {
-        use burn::prelude::s;
         use graphics::*;
 
-        let fallow_color = self.color_scheme.fallow_color();
-        let spawn_color = self.color_scheme.spawn_color();
-        let died_color = self.color_scheme.died_color();
-        let survivor_color = self.color_scheme.survivor_color();
+        let state_data = self.get_state();
+        let [h, w] = state_data.shape().dims();
+        let state_vec = state_data.int().to_data().to_vec::<i32>().unwrap();
 
-        let state_data = self.conway.read_slice(s![.., ..]);
-        let previous_data = self.conway.read_previous_slice(s![.., ..]);
-
-        let [h, w] = self.conway.shape();
         let [win_w, win_h] = args.viewport().draw_size;
         let draw_scale = [(win_w as f64) / (w as f64), (win_h as f64) / (h as f64)];
 
         // TODD: this should all be a one-step Image::draw().
 
         self.gl.draw(args.viewport(), |c, gl| {
-            for (h_idx, col) in state_data.iter().enumerate() {
-                for (w_idx, is_live) in col.iter().enumerate() {
-                    let is_live = *is_live;
+            for h_idx in 0..h {
+                for w_idx in 0..w {
+                    let offset = h_idx * w + w_idx;
+                    let is_live = state_vec[offset] == 1;
 
+                    let mut color = if is_live {
+                        [1.0, 1.0, 1.0, 1.0]
+                    } else {
+                        [0.0, 0.0, 0.0, 1.0]
+                    };
+
+                    /*
                     let was_live = previous_data
                         .as_ref()
                         .map(|prev| prev[h_idx][w_idx])
@@ -51,6 +54,7 @@ impl<B: Backend> FishbowlApp<B> {
                         (true, false) => died_color,
                         (true, true) => survivor_color,
                     };
+                     */
 
                     color[3] *= self.opacity;
 
@@ -64,20 +68,5 @@ impl<B: Backend> FishbowlApp<B> {
                 }
             }
         });
-    }
-
-    pub fn update(
-        &mut self,
-        _args: &UpdateArgs,
-    ) {
-        self.advance_frame();
-    }
-
-    pub fn advance_frame(&mut self) {
-        for _ in 0..self.step_rate {
-            self.conway.fuzz(self.update_noise);
-            self.conway.wrap();
-            self.conway.step_no_wrap()
-        }
     }
 }

@@ -1,3 +1,4 @@
+use crate::sim::Simulation;
 use app::FishbowlApp;
 use burn::prelude::Backend;
 use clap::Parser;
@@ -6,12 +7,13 @@ use color::ColorScheme;
 use glutin_window::GlutinWindow as Window;
 use opengl_graphics::{GlGraphics, OpenGL};
 use piston::event_loop::{EventSettings, Events};
-use piston::input::{RenderEvent, UpdateEvent};
+use piston::input::RenderEvent;
 use piston::window::WindowSettings;
 use piston::{EventLoop, OpenGLWindow};
 
 mod app;
 mod color;
+mod sim;
 
 fn parse_shape(s: &str) -> Result<[usize; 2], String> {
     if s.contains(",") {
@@ -40,10 +42,6 @@ pub struct Args {
     #[arg(long, value_parser=parse_shape, default_value="400,600")]
     pub grid_shape: [usize; 2],
 
-    /// The number of steps to take per frame.
-    #[arg(long, default_value_t = 2)]
-    pub step_rate: usize,
-
     /// The number of steps to skip on init.
     #[arg(long, default_value_t = 100)]
     pub init_skip_steps: usize,
@@ -56,9 +54,13 @@ pub struct Args {
     #[arg(long, default_value_t = 0.0001)]
     pub update_noise: f64,
 
-    /// The max frames per second.
+    /// The frames per second.
     #[arg(long, default_value_t = 30)]
     pub fps: u64,
+
+    /// The tics per second.
+    #[arg(long, default_value_t = 30.)]
+    pub tps: f32,
 
     /// The initial window zoom.
     #[arg(long, default_value_t = 1.5)]
@@ -93,6 +95,18 @@ fn run<B: Backend>(args: &Args) {
     let mut conway: Conway<B> = ConwayConfig::new(args.grid_shape).init(&device);
     conway.fuzz(args.initial_density);
     conway.wrap();
+    conway.step_no_wrap();
+    for _ in 0..args.init_skip_steps {
+        conway.fuzz(args.update_noise);
+        conway.wrap();
+        conway.step_no_wrap();
+    }
+
+    let sim = Simulation::new(
+        conway,
+        args.update_noise,
+        std::time::Duration::from_secs_f32(1.0 / args.tps),
+    );
 
     // Change this to OpenGL::V2_1 if not working.
     let opengl = OpenGL::V3_2;
@@ -116,15 +130,9 @@ fn run<B: Backend>(args: &Args) {
     // Create a new game and run it.
     let mut app = FishbowlApp {
         gl: GlGraphics::new(opengl),
-        conway,
-        update_noise: args.update_noise,
-        color_scheme: args.color_scheme,
-        step_rate: args.step_rate,
+        state_handle: sim.state.clone(),
         opacity: args.opacity,
     };
-    for _ in 0..args.init_skip_steps {
-        app.advance_frame();
-    }
 
     let mut events = Events::new(EventSettings::new());
     events.set_ups(args.fps);
@@ -133,9 +141,7 @@ fn run<B: Backend>(args: &Args) {
         if let Some(args) = e.render_args() {
             app.render(&args);
         }
-
-        if let Some(args) = e.update_args() {
-            app.update(&args);
-        }
     }
+
+    sim.shutdown();
 }

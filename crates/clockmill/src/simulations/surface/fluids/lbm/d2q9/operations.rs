@@ -6,7 +6,6 @@
 //! * [Wikipedia](https://en.wikipedia.org/wiki/Lattice_Boltzmann_methods).
 use crate::compat::FRAC_1_SQRT_3;
 use crate::compat::operations::{fast_powi_2, sum_dims};
-use bimm_contracts::{assert_shape_contract_periodically, unpack_shape_contract};
 use burn::Tensor;
 use burn::prelude::{Backend, Bool, s};
 use burn::serde::{Deserialize, Serialize};
@@ -379,20 +378,24 @@ pub fn combined_isotropic_collision<B: Backend>(
 /// # Returns
 /// - The updated ``[H[1:-1], W[1:-1], VY=3, VX=3]`` interior.
 pub fn stream_interior_cells<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 4> {
-    let [h, w] = unpack_shape_contract!(
+    #[cfg(debug_assertions)]
+    let [h, w] = bimm_contracts::unpack_shape_contract!(
         ["H", "W", "VY", "VX"],
         &dist.shape().dims,
         &["H", "W"],
         &[("VY", 3), ("VX", 3)]
     );
 
-    // Map the state into no-copy 3x3 neighborhood windows:
-    // [H-2, W-2, VY=3, VX=3, WIN_Y=3, WIN_X=3]
-    // - (H, W) is the spatial position of the "current" cell.
-    // - (WIN_Y, WIN_X) is the current window; with the current cell in the center.
-    // - (VY, VX) represents the 3x3 distribution in each cell.
+    // Map the state into no-copy 3x3 neighborhood windows.
+    //
+    // Note the geometry: [H-2, W-2, VY=3, VX=3, WIN_Y=3, WIN_X=3]
+    // - (H, W) - the spatial position of the "current" cell.
+    // - (WIN_Y, WIN_X) - the current window; with the current cell in the center.
+    // - (VY, VX) - the 3x3 distribution in each cell.
     let windows = dist.unfold::<5, _>(0, 3, 1).unfold::<6, _>(1, 3, 1);
 
+    // Timing: crutcher, Oct 2025:
+    // cat([cat([tensor,]),]) is ~10% faster than cat([tensor,]).reshape([..., 3, 3])
     let result: Tensor<B, 4> = Tensor::cat(
         (0..3)
             .map(|vy| -> Tensor<B, 4> {
@@ -416,7 +419,8 @@ pub fn stream_interior_cells<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 4> {
         2,
     );
 
-    assert_shape_contract_periodically!(
+    #[cfg(debug_assertions)]
+    bimm_contracts::assert_shape_contract_periodically!(
         ["H" - "PAD", "W" - "PAD", "VY", "VX"],
         &result.shape().dims,
         &[("H", h), ("W", w), ("PAD", 2), ("VY", 3), ("VX", 3)]

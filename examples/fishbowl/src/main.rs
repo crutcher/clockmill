@@ -43,11 +43,11 @@ pub struct Args {
     pub grid_shape: [usize; 2],
 
     /// The number of steps to skip on init.
-    #[arg(long, default_value_t = 100)]
+    #[arg(long, default_value_t = 10)]
     pub init_skip_steps: usize,
 
     /// The initial density of the grid.
-    #[arg(long, default_value_t = 0.03)]
+    #[arg(long, default_value_t = 0.1)]
     pub initial_density: f64,
 
     /// The noise to apply to the grid on each step.
@@ -55,11 +55,11 @@ pub struct Args {
     pub update_noise: f64,
 
     /// The frames per second.
-    #[arg(long, default_value_t = 90)]
+    #[arg(long, default_value_t = 60)]
     pub fps: u64,
 
     /// The tics per second.
-    #[arg(long, default_value_t = 200.)]
+    #[arg(long, default_value_t = 4.)]
     pub tps: f32,
 
     /// The initial window zoom.
@@ -67,7 +67,7 @@ pub struct Args {
     pub zoom: f64,
 
     /// The opacity between frames.
-    #[arg(long, default_value_t = 0.2)]
+    #[arg(long, default_value_t = 0.8)]
     pub opacity: f32,
 
     /// The color scheme to use.

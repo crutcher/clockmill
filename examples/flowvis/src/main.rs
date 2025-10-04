@@ -140,6 +140,28 @@ fn run<B: Backend>(args: &Args) {
     }
 }
 
+/*
+// arctan(x) = ln(
+//   (x/sqrt(1+x²)) + sqrt(1 + (x²/(1+x²)))
+// )
+fn arctan<B: Backend, const D: usize>(x: &Tensor<B, D>) -> Tensor<B, D> {
+    let x2: Tensor<B, D> = fast_powi_2(x.clone());
+    let t: Tensor<B, D> = 1.0 + x2.clone();
+
+    (
+        (x.clone() / t.clone().sqrt())
+            + ((x2 / t) + 1).sqrt()
+    ).log()
+}
+
+fn atan2<B: Backend, const D: usize>(y: &Tensor<B, D>, x: &Tensor<B, D>) -> Tensor<B, D> {
+    if x
+    let at = arctan(y/x)
+
+}
+
+ */
+
 pub struct FlowVisApp<B: Backend> {
     pub gl: GlGraphics, // OpenGL drawing backend.
     pub world_state: LBMD2Q9State<B>,
@@ -173,6 +195,7 @@ impl<B: Backend> FlowVisApp<B> {
         for y in 0..h {
             for x in 0..w {
                 let v: f32 = cells[(y * w) + x];
+
                 result[y][x] = (v, 1.0 - v);
             }
         }

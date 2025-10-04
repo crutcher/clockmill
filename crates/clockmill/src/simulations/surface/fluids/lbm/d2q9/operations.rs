@@ -7,8 +7,12 @@
 use crate::compat::operations::{fast_powi_2, sum_dims};
 use bimm_contracts::{assert_shape_contract_periodically, unpack_shape_contract};
 use burn::Tensor;
-use burn::prelude::{Backend, Bool, s};
+use burn::prelude::{s, Backend, Bool};
 use burn::serde::{Deserialize, Serialize};
+use crate::compat::FRAC_1_SQRT_3;
+
+/// The speed of sound.
+pub const SPEED_OF_SOUND: f64 = FRAC_1_SQRT_3;
 
 /// Population Density
 ///
@@ -94,7 +98,7 @@ pub fn normalize_velocity<B: Backend>(
 ) -> Tensor<B, 3> {
     // TODO: div-by-zero check?
     // .clamp_min(1e-15)?
-    m.div(rho.add_scalar(1e-7).unsqueeze_dim(2))
+    m.div(rho.unsqueeze_dim(2))
 }
 
 /// Compute the directional macroscopic velocity.
@@ -209,15 +213,18 @@ pub fn equilibrium<B: Backend>(
     // [H, W]
     let u_sq = velocity_squared(u);
 
+    static C2: f64 = SPEED_OF_SOUND * SPEED_OF_SOUND;
+    static C4: f64 = C2 * C2;
+
     // TODO: Benchmark:
     // Tensor::powi_scalar(2) is still a float pow operation.
     // * `3.0 * e_dot_u + 4.5 * e_dot_u^2`
     // * `e_dot_u * (3.0 + 4.5 * e_dot_u)`
     (w.unsqueeze() * rho.unsqueeze_dim(2)).mul(
         1
-            + 3.0 * e_dot_u.clone()
-            + 4.5 * fast_powi_2(e_dot_u)
-            - 1.5 * u_sq.unsqueeze_dims::<4>(&[2, 3])
+            + e_dot_u.clone() / C2
+            + fast_powi_2(e_dot_u) / (2.0 * C4)
+            - u_sq.unsqueeze_dims::<4>(&[2, 3]) / (2.0 * C2)
     )
 }
 
@@ -232,6 +239,20 @@ pub enum RelaxationParam {
 }
 
 impl RelaxationParam {
+    /// Validate the relaxation; or panic.
+    pub fn validate(&self) {
+        match self {
+            RelaxationParam::Omega(omega) => {
+                assert!(
+                    (0.0..=2.0).contains(omega),
+                    "omega ({omega}) must be in [0, 2.0] range"
+                );
+            }
+            RelaxationParam::Tau(tau) => {
+                assert!(*tau >= 0.5, "tau ({tau}) must be >= 0.5");
+            }
+        }
+    }
     /// Get the relaxation frequency (1/tau), typically in (0, 2)
     pub fn as_omega_value(&self) -> f64 {
         match self {

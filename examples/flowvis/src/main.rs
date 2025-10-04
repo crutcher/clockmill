@@ -1,7 +1,7 @@
 use burn::prelude::{Backend, s};
 use burn::tensor::DType::F32;
 use clap::Parser;
-use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{RelaxationParam, moments};
+use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{RelaxationParam, moments, velocity_squared};
 use clockmill::simulations::surface::fluids::lbm::d2q9::world::{
     LBMD2Q9Config, LBMD2Q9State, LBMMeta,
 };
@@ -101,16 +101,16 @@ fn run<B: Backend>(args: &Args) {
         .init(&device);
     world_state.dist = world_state
         .dist
-        .slice_fill(s![50..60, 10..20, 0, 1], 1000.0)
-        .slice_fill(s![70..90, 90..100, 2, 1], 800.0);
+        .slice_fill(s![50, 20, 1, 1], 100.0)
+        .slice_fill(s![90, 100, 1, 1], 200.0);
 
     world_state.solid_mask = world_state
         .solid_mask
         .slice_fill(s![30, 40..60], true)
-        .slice_fill(s![.., 1], true)
-        .slice_fill(s![.., -2], true)
-        .slice_fill(s![1, ..], true)
-        .slice_fill(s![-2, ..], true);
+        .slice_fill(s![.., ..2], true)
+        .slice_fill(s![.., -2..], true)
+        .slice_fill(s![..2, ..], true)
+        .slice_fill(s![-2.., ..], true);
 
     let world_state = world_state.to_dtype(F32);
 
@@ -153,25 +153,25 @@ impl<B: Backend> FlowVisApp<B> {
 
         let (_rho, u) = moments(dist.clone(), e.clone());
 
-        // let u_sq = velocity_squared(u.clone());
+        let u_sq = velocity_squared(u.clone()).sqrt();
         // let cells = u_sq.sqrt();
 
-        let cells = u;
-        let scale = 10.0;
+        let cells = u_sq;
+        // let scale = 10.0;
+        let scale = cells.clone().max().into_scalar();
         // let scale = cells.clone().max().into_scalar();
 
         let cells = (cells / scale).clamp(0.0, 1.0);
         // let cells = cells.mul_scalar(3.14 / 2.0).sin();
 
         let cells = cells.to_data().into_vec::<f32>().unwrap();
-        assert_eq!(cells.len(), h * w * 2);
+        assert_eq!(cells.len(), h * w);
 
         let mut result = vec![vec![(0.0, 0.0); w]; h];
         for y in 0..h {
             for x in 0..w {
-                let uy: f32 = cells[(y * w * 2) + x * 2];
-                let ux: f32 = cells[(y * w * 2) + x * 2 + 1];
-                result[y][x] = (uy, ux);
+                let v: f32 = cells[(y * w) + x];
+                result[y][x] = (v, 1.0 - v);
             }
         }
         result
@@ -217,7 +217,7 @@ impl<B: Backend> FlowVisApp<B> {
                     let color = if is_solid {
                         [1., 1., 1., 1.]
                     } else if uy.is_finite() && ux.is_finite() {
-                        [0., uy, ux, 1.]
+                        [0.0, uy, ux, 1.]
                     } else {
                         [0., 0., 0., 1.]
                     };

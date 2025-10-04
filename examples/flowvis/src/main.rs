@@ -166,7 +166,7 @@ impl<B: Backend> FlowVisApp<B> {
         let cells = (cells / scale).clamp(0.0, 1.0);
         // let cells = cells.mul_scalar(3.14 / 2.0).sin();
 
-        let cells = cells.to_data().into_vec::<f32>().unwrap();
+        let cells = cells.cast(F32).to_data().into_vec::<f32>().unwrap();
         assert_eq!(cells.len(), h * w);
 
         let mut result = vec![vec![(0.0, 0.0); w]; h];

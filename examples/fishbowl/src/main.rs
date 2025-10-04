@@ -55,11 +55,11 @@ pub struct Args {
     pub update_noise: f64,
 
     /// The frames per second.
-    #[arg(long, default_value_t = 30)]
+    #[arg(long, default_value_t = 90)]
     pub fps: u64,
 
     /// The tics per second.
-    #[arg(long, default_value_t = 30.)]
+    #[arg(long, default_value_t = 200.)]
     pub tps: f32,
 
     /// The initial window zoom.

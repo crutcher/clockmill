@@ -5,6 +5,7 @@ use clap::Parser;
 use clockmill::simulations::surface::conway::{Conway, ConwayConfig};
 use color::ColorScheme;
 use glutin_window::GlutinWindow as Window;
+use indicatif::ProgressBar;
 use opengl_graphics::{GlGraphics, OpenGL};
 use piston::event_loop::{EventSettings, Events};
 use piston::input::RenderEvent;
@@ -92,6 +93,8 @@ fn main() {
 fn run<B: Backend>(args: &Args) {
     let device = Default::default();
 
+    let progress = ProgressBar::new_spinner();
+
     let mut conway: Conway<B> = ConwayConfig::new(args.grid_shape).init(&device);
     conway.fuzz(args.initial_density);
     conway.wrap();
@@ -137,8 +140,27 @@ fn run<B: Backend>(args: &Args) {
     let mut events = Events::new(EventSettings::new());
     events.set_ups(args.fps);
 
+    let delay_smoothing = 20;
+    let mut avg_delay = std::time::Duration::from_secs_f32(0.0);
+    let mut last_time = std::time::Instant::now();
+
     while let Some(e) = events.next(&mut window) {
         if let Some(args) = e.render_args() {
+            {
+                let now = std::time::Instant::now();
+                let dt = now - last_time;
+                avg_delay = (avg_delay * delay_smoothing + dt) / (delay_smoothing + 1);
+                last_time = now;
+            }
+
+            let display_fps = 1.0 / avg_delay.as_secs_f32();
+
+            // TODO: get tps from the simulation.
+            // TODO #2: render info on the screen.
+
+            progress.set_message(format!("render:{:.0}fps", display_fps));
+            progress.tick();
+
             app.render(&args);
         }
     }

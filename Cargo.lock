@@ -2477,6 +2477,7 @@ dependencies = [
  "clap",
  "clockmill",
  "gl 0.14.0",
+ "indicatif",
  "piston",
  "piston2d-graphics",
  "piston2d-opengl_graphics",

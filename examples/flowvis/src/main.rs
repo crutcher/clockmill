@@ -38,7 +38,7 @@ fn parse_shape(s: &str) -> Result<[usize; 2], String> {
 #[command(long_about = None)]
 pub struct Args {
     /// The grid shape as `HEIGHT,WIDTH`, or `SIZE`.
-    #[arg(long, value_parser=parse_shape, default_value="150")]
+    #[arg(long, value_parser=parse_shape, default_value="500")]
     pub grid_shape: [usize; 2],
 
     /// The max frames per second.
@@ -46,7 +46,7 @@ pub struct Args {
     pub fps: u64,
 
     /// The initial window zoom.
-    #[arg(long, default_value_t = 3.0)]
+    #[arg(long, default_value_t = 1.0)]
     pub zoom: f64,
 
     /// The number of steps to take per frame.

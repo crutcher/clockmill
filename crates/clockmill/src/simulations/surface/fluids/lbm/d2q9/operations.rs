@@ -162,10 +162,6 @@ pub fn moments<B: Backend>(
 /// # Returns
 /// - ``[H, W]`` velocity magnitude squared
 pub fn velocity_squared<B: Backend>(u: Tensor<B, 3>) -> Tensor<B, 2> {
-    // TODO: Benchmark:
-    // Tensor::powi_scalar(2) is still a float pow operation.
-    // * u.powi_scalar(2)
-    // * u * u
     fast_powi_2(u).sum_dim(2).squeeze_dims::<2>(&[2])
 }
 

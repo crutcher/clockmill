@@ -1,7 +1,9 @@
 use burn::prelude::{Backend, s};
 use burn::tensor::DType::F32;
 use clap::Parser;
-use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{RelaxationParam, moments, velocity_squared};
+use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{
+    RelaxationParam, moments, velocity_squared,
+};
 use clockmill::simulations::surface::fluids::lbm::d2q9::world::{
     LBMD2Q9Config, LBMD2Q9State, LBMMeta,
 };

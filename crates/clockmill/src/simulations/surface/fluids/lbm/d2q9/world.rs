@@ -1,6 +1,9 @@
 //! # LBM D2Q9 World Module
 
-use crate::simulations::surface::fluids::lbm::d2q9::operations::{RelaxationParam, combined_isotropic_collision, direction_vectors, stream_interior_cells, weight_matrix, equilibrium, moments};
+use crate::simulations::surface::fluids::lbm::d2q9::operations::{
+    RelaxationParam, combined_isotropic_collision, direction_vectors, stream_interior_cells,
+    weight_matrix,
+};
 use burn::Tensor;
 use burn::config::Config;
 use burn::module::{Ignored, Module};
@@ -52,17 +55,14 @@ impl LBMD2Q9Config {
 
         let solid_mask = Tensor::<B, 2>::zeros([height, width], device).bool();
 
-        // Start off in a relaxed state.
-        let state = Tensor::<B, 4>::zeros([height, width, 3, 3], device)
-            .slice_fill(s![.., .., 1, 1], 1.0);
+        let initial_rho = 1.0;
         let e = direction_vectors(device);
         let w = weight_matrix(device);
-        let (rho, u) = moments(state.clone(), e.clone());
-        let state = equilibrium(
-            rho,
-            u,
-            e.clone(),
-            w.clone(),
+
+        // Start off in a relaxed state.
+        let state = Tensor::<B, 4>::empty([height, width, 3, 3], device).slice_assign(
+            s![.., ..],
+            w.clone().unsqueeze::<4>().expand([height, width, 3, 3]) * initial_rho,
         );
 
         self.relaxation.validate();

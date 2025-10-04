@@ -4,15 +4,21 @@
 //!
 //! See:
 //! * [Wikipedia](https://en.wikipedia.org/wiki/Lattice_Boltzmann_methods).
+use crate::compat::FRAC_1_SQRT_3;
 use crate::compat::operations::{fast_powi_2, sum_dims};
 use bimm_contracts::{assert_shape_contract_periodically, unpack_shape_contract};
 use burn::Tensor;
-use burn::prelude::{s, Backend, Bool};
+use burn::prelude::{Backend, Bool, s};
 use burn::serde::{Deserialize, Serialize};
-use crate::compat::FRAC_1_SQRT_3;
 
 /// The speed of sound.
 pub const SPEED_OF_SOUND: f64 = FRAC_1_SQRT_3;
+
+/// The speed of sound squared.
+pub const C2: f64 = SPEED_OF_SOUND * SPEED_OF_SOUND;
+
+/// The speed of sound cubed.
+pub const C4: f64 = C2 * C2;
 
 /// Population Density
 ///
@@ -213,15 +219,13 @@ pub fn equilibrium<B: Backend>(
     // [H, W]
     let u_sq = velocity_squared(u);
 
-    static C2: f64 = SPEED_OF_SOUND * SPEED_OF_SOUND;
-    static C4: f64 = C2 * C2;
+    // [1, 1, VY, VX]
+    let w = w.unsqueeze::<4>();
+    // [H, W, 1, 1]
+    let rho = rho.unsqueeze_dims::<4>(&[2, 3]);
 
-    // TODO: Benchmark:
-    // Tensor::powi_scalar(2) is still a float pow operation.
-    // * `3.0 * e_dot_u + 4.5 * e_dot_u^2`
-    // * `e_dot_u * (3.0 + 4.5 * e_dot_u)`
-    (w.unsqueeze() * rho.unsqueeze_dim(2)).mul(
-        1
+    (w * rho).mul(
+        1.0
             + e_dot_u.clone() / C2
             + fast_powi_2(e_dot_u) / (2.0 * C4)
             - u_sq.unsqueeze_dims::<4>(&[2, 3]) / (2.0 * C2)
@@ -345,7 +349,7 @@ pub fn isotropic_spherical_reflection<B: Backend>(
 /// Combined bgk collision and isotropic reflection operator.
 ///
 /// This combines:
-/// - [`bgk_collision]
+/// - [`bgk_collision`]
 /// - [`isotropic_spherical_reflection`]
 ///
 /// # Arguments
@@ -382,8 +386,11 @@ pub fn stream_interior_cells<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 4> {
         &[("VY", 3), ("VX", 3)]
     );
 
-    // Map the state into no-copy 3x3 neighborhood windows.
-    // [H-2, W-2, V=3, U=3, VY=3, VX=3]
+    // Map the state into no-copy 3x3 neighborhood windows:
+    // [H-2, W-2, VY=3, VX=3, WIN_Y=3, WIN_X=3]
+    // - (H, W) is the spatial position of the "current" cell.
+    // - (WIN_Y, WIN_X) is the current window; with the current cell in the center.
+    // - (VY, VX) represents the 3x3 distribution in each cell.
     let windows = dist.unfold::<5, _>(0, 3, 1).unfold::<6, _>(1, 3, 1);
 
     let result: Tensor<B, 4> = Tensor::cat(

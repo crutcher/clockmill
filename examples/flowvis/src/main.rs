@@ -57,9 +57,9 @@ pub struct Args {
     #[arg(long, default_value_t = 2.5)]
     pub zoom: f64,
 
-    /// The number of steps to take per frame.
-    #[arg(long, default_value_t = 1)]
-    pub step_rate: usize,
+    /// The display opacity of updates.
+    #[arg(long, default_value_t = 0.5)]
+    pub opacity: f32,
 
     /// The number of steps to skip on init.
     #[arg(long, default_value_t = 0)]
@@ -132,7 +132,7 @@ fn run<B: Backend>(args: &Args) {
         world_state.advance_step();
     }
 
-    let is_solid: Tensor<B, 2, Bool> = world_state.solid_mask.clone();
+    let solid_mask: Tensor<B, 2, Bool> = world_state.solid_mask.clone();
 
     let sim = Simulation::new(
         world_state,
@@ -143,8 +143,8 @@ fn run<B: Backend>(args: &Args) {
     let mut app = FlowVisApp {
         gl: GlGraphics::new(opengl),
         state_handle: sim.state.clone(),
-        solid_mask: is_solid,
-        step_rate: args.step_rate,
+        solid_mask,
+        opacity: args.opacity,
     };
 
     let mut events = Events::new(EventSettings::new());
@@ -207,7 +207,7 @@ pub struct FlowVisApp<B: Backend> {
     pub gl: GlGraphics, // OpenGL drawing backend.
     pub state_handle: Arc<Mutex<Tensor<B, 4>>>,
     pub solid_mask: Tensor<B, 2, Bool>,
-    pub step_rate: usize,
+    pub opacity: f32,
 }
 
 impl<B: Backend> FlowVisApp<B> {
@@ -288,7 +288,7 @@ impl<B: Backend> FlowVisApp<B> {
                     let color = if is_solid {
                         [1., 1., 1., 1.]
                     } else if uy.is_finite() && ux.is_finite() {
-                        [0.0, uy, ux, 1.]
+                        [0.0, uy, ux, self.opacity]
                     } else {
                         [0., 0., 0., 1.]
                     };

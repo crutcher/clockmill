@@ -363,7 +363,10 @@ pub fn isotropic_spherical_reflection<B: Backend>(
     naive_dist: Tensor<B, 4>,
     solid_mask: Tensor<B, 2, Bool>,
 ) -> Tensor<B, 4> {
-    naive_dist.mask_where(solid_mask.unsqueeze_dims::<4>(&[-1, -1]), pre_dist)
+    naive_dist.mask_where(
+        solid_mask.unsqueeze_dims::<4>(&[-1, -1]),
+        pre_dist.flip([2, 3]),
+    )
 }
 
 /// Combined bgk collision and isotropic reflection operator.
@@ -401,7 +404,7 @@ pub fn combined_isotropic_collision<B: Backend>(
 ///
 /// # Returns
 /// - The updated ``[H[1:-1], W[1:-1], VY=3, VX=3]`` interior.
-pub fn stream_interior_cells<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 4> {
+pub fn stream_interior<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 4> {
     #[cfg(debug_assertions)]
     let [h, w] = bimm_contracts::unpack_shape_contract!(
         ["H", "W", "VY", "VX"],
@@ -432,7 +435,7 @@ pub fn stream_interior_cells<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 4> {
 
                             windows
                                 .clone()
-                                .slice(s![.., .., source_vy, source_vx, vy, vx])
+                                .slice(s![.., .., vy, vx, source_vy, source_vx])
                                 .squeeze_dims::<4>(&[-2, -1])
                         })
                         .collect(),
@@ -477,7 +480,7 @@ pub fn half_stream_y<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 4> {
         (0..3)
             .map(|vy| -> Tensor<B, 4> {
                 let source_vy = 2 - vy;
-                windows.clone().slice(s![.., 0, source_vy, vy])
+                windows.clone().slice(s![.., 0, vy, source_vy])
             })
             .collect(),
         2,
@@ -517,9 +520,7 @@ pub fn half_stream_x<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 4> {
         (0..3)
             .map(|vx| -> Tensor<B, 4> {
                 let source_vx = 2 - vx;
-                windows
-                    .clone()
-                    .slice(s![0, .., vx, source_vx])
+                windows.clone().slice(s![0, .., vx, source_vx])
             })
             .collect(),
         3,
@@ -862,14 +863,14 @@ mod tests {
             ],
         ], &device);
 
-        let result = stream_interior_cells(state.clone());
+        let result = stream_interior(state.clone());
 
         assert_eq!(result.shape().dims, vec![1, 1, 3, 3]);
 
         let expected: Tensor<B, 4> = Tensor::from_data([[[
-            [8., 16., 24.],
-            [32., 40., 48.],
-            [56., 64., 72.],
+            [72., 64., 56.],
+            [48., 40., 32.],
+            [24., 16., 8.],
         ]]], &device);
 
         result.to_data().assert_eq(&expected.to_data(), false);

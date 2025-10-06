@@ -2,7 +2,7 @@
 
 use crate::simulations::surface::fluids::lbm::d2q9::operations::{
     RelaxationParam, combined_isotropic_collision, direction_vectors, half_stream_x, half_stream_y,
-    stream_interior_cells, weight_matrix,
+    stream_interior, weight_matrix,
 };
 use burn::Tensor;
 use burn::config::Config;
@@ -161,47 +161,53 @@ impl<B: Backend> LBMD2Q9State<B> {
         self.correct_total_mass / self.current_total_mass()
     }
 
-    fn left_edge(
+    fn stream_left_edge(
         &self,
         thermal_dist: Tensor<B, 4>,
     ) -> Tensor<B, 4> {
         Tensor::cat(
             vec![
-                thermal_dist.clone().slice(s![1..-1, 0, .., ..2]),
                 half_stream_y(thermal_dist.clone().slice(s![.., 1, .., 0])),
+                thermal_dist.clone().slice(s![1..-1, 0, .., -2..]),
             ],
             3,
         )
     }
-    fn right_edge(
+    fn stream_right_edge(
         &self,
         thermal_dist: Tensor<B, 4>,
     ) -> Tensor<B, 4> {
         Tensor::cat(
             vec![
+                thermal_dist.clone().slice(s![1..-1, -1, .., ..2]),
                 half_stream_y(thermal_dist.clone().slice(s![.., -2, .., -1])),
-                thermal_dist.clone().slice(s![1..-1, -1, .., -2..]),
             ],
             3,
         )
     }
-    fn top_edge(
+    fn stream_top_edge(
         &self,
         thermal_dist: Tensor<B, 4>,
     ) -> Tensor<B, 4> {
         Tensor::cat(
             vec![
-                thermal_dist.clone().slice(s![0, 1..-1, ..2, ..]),
                 half_stream_x(thermal_dist.clone().slice(s![1, .., 0, ..])),
+                thermal_dist.clone().slice(s![0, 1..-1, -2.., ..]),
             ],
             2,
         )
     }
-    fn bottom_edge(
+    fn stream_bottom_edge(
         &self,
         thermal_dist: Tensor<B, 4>,
     ) -> Tensor<B, 4> {
-        thermal_dist.clone().slice(s![-1, 1..-1])
+        Tensor::cat(
+            vec![
+                thermal_dist.clone().slice(s![-1, 1..-1, ..2, ..]),
+                half_stream_x(thermal_dist.clone().slice(s![-2, .., -1, ..])),
+            ],
+            2,
+        )
     }
 
     /// Advance the world simulation by one step.
@@ -222,33 +228,45 @@ impl<B: Backend> LBMD2Q9State<B> {
             ),
         );
         // 2. Boundary cell updates.
+        // For now, none; boundary cells are all effectively reflective.
 
-        // Streaming Updates:
-        // 1. Internal cell streaming.
-
+        // Streaming Updates.
+        // *lots* of repetitions in this; could maybe be refactored.
         let streaming_dist = Tensor::cat(
             vec![
                 Tensor::cat(
                     vec![
-                        thermal_dist.clone().slice(s![0, 0]),
-                        self.top_edge(thermal_dist.clone()),
-                        thermal_dist.clone().slice(s![0, -1]),
+                        thermal_dist.clone().slice(s![0, 0]).slice_assign(
+                            s![0, 0, 0, 0],
+                            thermal_dist.clone().slice(s![1, 1, 0, 0]),
+                        ),
+                        self.stream_top_edge(thermal_dist.clone()),
+                        thermal_dist.clone().slice(s![0, -1]).slice_assign(
+                            s![0, 0, 0, 2],
+                            thermal_dist.clone().slice(s![1, -2, 0, 2]),
+                        ),
                     ],
                     1,
                 ),
                 Tensor::cat(
                     vec![
-                        self.left_edge(thermal_dist.clone()),
-                        stream_interior_cells(thermal_dist.clone()),
-                        self.right_edge(thermal_dist.clone()),
+                        self.stream_left_edge(thermal_dist.clone()),
+                        stream_interior(thermal_dist.clone()),
+                        self.stream_right_edge(thermal_dist.clone()),
                     ],
                     1,
                 ),
                 Tensor::cat(
                     vec![
-                        thermal_dist.clone().slice(s![-1, 0]),
-                        self.bottom_edge(thermal_dist.clone()),
-                        thermal_dist.clone().slice(s![-1, -1]),
+                        thermal_dist.clone().slice(s![-1, 0]).slice_assign(
+                            s![0, 0, 2, 0],
+                            thermal_dist.clone().slice(s![-2, 1, 2, 0]),
+                        ),
+                        self.stream_bottom_edge(thermal_dist.clone()),
+                        thermal_dist.clone().slice(s![-1, -1]).slice_assign(
+                            s![0, 0, 2, 2],
+                            thermal_dist.clone().slice(s![-2, -2, 2, 2]),
+                        ),
                     ],
                     1,
                 ),

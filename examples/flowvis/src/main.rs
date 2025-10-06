@@ -1,7 +1,9 @@
 use burn::prelude::{Backend, s};
 use burn::tensor::DType::F32;
 use clap::Parser;
-use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{RelaxationParam, moments};
+use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{
+    RelaxationParam, macroscopic_momentum,
+};
 use clockmill::simulations::surface::fluids::lbm::d2q9::world::{
     LBMD2Q9Config, LBMD2Q9State, LBMMeta,
 };
@@ -36,15 +38,15 @@ fn parse_shape(s: &str) -> Result<[usize; 2], String> {
 #[command(long_about = None)]
 pub struct Args {
     /// The grid shape as `HEIGHT,WIDTH`, or `SIZE`.
-    #[arg(long, value_parser=parse_shape, default_value="500")]
+    #[arg(long, value_parser=parse_shape, default_value="300")]
     pub grid_shape: [usize; 2],
 
     /// The max frames per second.
-    #[arg(long, default_value_t = 10)]
+    #[arg(long, default_value_t = 60)]
     pub fps: u64,
 
     /// The initial window zoom.
-    #[arg(long, default_value_t = 1.0)]
+    #[arg(long, default_value_t = 4.0)]
     pub zoom: f64,
 
     /// The number of steps to take per frame.
@@ -101,8 +103,8 @@ fn run<B: Backend>(args: &Args) {
         .init(&device);
     world_state.dist = world_state
         .dist
-        .slice_fill(s![50, 20, 1, 1], 100.0)
-        .slice_fill(s![90, 100, 1, 1], 200.0);
+        .slice_fill(s![50, 20, 1, 1], 50.0)
+        .slice_fill(s![90, 100, 1, 1], 50.0);
 
     world_state.solid_mask = world_state
         .solid_mask
@@ -174,12 +176,13 @@ impl<B: Backend> FlowVisApp<B> {
 
         let e = self.world_state.e.clone();
 
-        let (_rho, u) = moments(dist.clone(), e.clone());
+        // let (_rho, u) = moments(dist.clone(), e.clone());
+        // let cells = fast_powi_2(u);
+        let cells = macroscopic_momentum(dist.clone(), e.clone());
 
-        let scale = u.clone().max().into_scalar();
-
-        let cells = (u / scale).clamp(0.0, 1.0);
-        let cells = cells.mul_scalar(std::f64::consts::PI / 2.0).sin();
+        let scale = cells.clone().max().into_scalar();
+        let cells = ((cells / scale) + 1.0) / 2.0;
+        // let cells = cells.mul_scalar(std::f64::consts::PI / 2.0).sin();
 
         let cells = cells.cast(F32).to_data().into_vec::<f32>().unwrap();
         assert_eq!(cells.len(), height * width * 2);

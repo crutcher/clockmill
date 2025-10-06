@@ -228,12 +228,12 @@ pub fn equilibrium<B: Backend>(
     // [H, W, 1, 1]
     let rho = rho.unsqueeze_dims::<4>(&[2, 3]);
 
-    (w * rho).mul(
+    w * (rho.mul(
         1.0
             + e_dot_u.clone() / C2
             + fast_powi_2(e_dot_u) / (2.0 * C4)
             - u_sq.unsqueeze_dims::<4>(&[2, 3]) / (2.0 * C2)
-    )
+    ))
 }
 
 /// Wrapper for the BGK collision operator.
@@ -280,12 +280,20 @@ impl RelaxationParam {
 
 /// The relaxation operator for [`naive_bgk_collision`].
 ///
-/// Computes ``dist_a * (1 - omega) + dist_b * omega``.
+/// Computes ``correction * (dist_a * (1 - omega) + dist_b * omega)``.
+///
+/// ## Correction
+///
+/// The `correction` term is a scale applied to the result. It is provided
+/// as a way for dynamic corrections to be computed as fused operations;
+/// and will default to `1.0` for `None`.
 ///
 /// # Arguments
 /// - `dist_a`: a ``[H, W, VY=3, VX=3]`` distribution.
 /// - `dist_b`: a ``[H, W, VY=3, VX=3]`` distribution.
 /// - `relaxation`: relaxation parameter.
+/// - `correction`: fused correction factor for the relaxation operator;
+///   defaults to 1.0.
 ///
 /// # Returns
 ///
@@ -294,18 +302,15 @@ pub fn relaxed_sum<B: Backend>(
     dist_a: Tensor<B, 4>,
     dist_b: Tensor<B, 4>,
     relaxation: RelaxationParam,
+    correction: Option<f64>,
 ) -> Tensor<B, 4> {
-    // A + (B - A) / T
-    // A + (B - A) O
-    // A + B O - A O
-    // A - A O + B O
-    // A ( 1 - O ) + B O
     let omega = relaxation.as_omega_value();
     assert!(
         (0.0..=2.0).contains(&omega),
         "omega must be in [0, 2.0] range"
     );
-    dist_a * (1.0 - omega) + dist_b * omega
+    let correction = correction.unwrap_or(1.0);
+    dist_a * (correction * (1.0 - omega)) + dist_b * (correction * omega)
 }
 
 /// Naive aggregate Bhatnagar-Gross-Krook collision operator.
@@ -313,10 +318,18 @@ pub fn relaxed_sum<B: Backend>(
 /// This operator makes no accounting for solids, reflection,
 /// or boundaries.
 ///
+/// ## Correction
+///
+/// The `correction` term is a scale applied to the result. It is provided
+/// as a way for dynamic corrections to be computed as fused operations;
+/// and will default to `1.0` for `None`.
+///
 /// # Arguments
 /// - `dist`: ``[H, W, VY=3, VX=3]`` current distribution
 /// - `equi_dist`: ``[H, W, VY=3, VX=3]`` equilibrium distribution
 /// - `relaxation`: relaxation parameter.
+/// - `correction`: fused correction factor for the relaxation operator;
+///   defaults to 1.0.
 ///
 /// # Returns
 /// - `[H, W, Y=3, VX=3]` post-collision distribution
@@ -326,10 +339,12 @@ pub fn naive_bgk_collision<B: Backend>(
     e: Tensor<B, 3>,
     w: Tensor<B, 2>,
     relaxation: RelaxationParam,
+    correction: Option<f64>,
 ) -> Tensor<B, 4> {
     let (source_rho, u) = moments(dist.clone(), e.clone());
     let eq_dist = equilibrium(source_rho.clone(), u, e, w);
-    relaxed_sum(dist, eq_dist, relaxation)
+
+    relaxed_sum(dist, eq_dist, relaxation, correction)
 }
 
 /// Applies isotropic spherical solid reflection updates to [`naive_bgk_collision`].
@@ -361,6 +376,8 @@ pub fn isotropic_spherical_reflection<B: Backend>(
 /// - `pre_dist`: ``[H, W, VY=3, VX=3]`` pre-collision distribution
 /// - `naive_dist`: ``[H, W, VY=3, VX=3]`` post-collision distribution
 /// - `solid_mask`: ``[H, W]`` mask of solid locations.
+/// - `correction`: fused correction factor for the relaxation operator;
+///   defaults to 1.0.
 ///
 /// # Returns
 /// - ``[H, W, VY=3, VX=3]`` distribution.
@@ -370,8 +387,9 @@ pub fn combined_isotropic_collision<B: Backend>(
     w: Tensor<B, 2>,
     solid_mask: Tensor<B, 2, Bool>,
     relaxation: RelaxationParam,
+    correction: Option<f64>,
 ) -> Tensor<B, 4> {
-    let naive_dist = naive_bgk_collision(dist.clone(), e, w, relaxation);
+    let naive_dist = naive_bgk_collision(dist.clone(), e, w, relaxation, correction);
     isotropic_spherical_reflection(dist, naive_dist, solid_mask)
 }
 
@@ -646,14 +664,29 @@ mod tests {
             e.clone(),
             w.clone(),
             RelaxationParam::Omega(0.5),
+            None,
         );
 
-        let c_rho = density(col_dist.clone());
-
         // Invariant: density(collision(dist, param)) == density(dist)
-        c_rho
+        density(col_dist.clone())
             .to_data()
-            .assert_approx_eq::<f32>(&rho.to_data(), Tolerance::default());
+            .assert_approx_eq::<f32>(&rho.clone().to_data(), Tolerance::default());
+
+        // With Correction
+        {
+            let col_dist = naive_bgk_collision(
+                dist.clone(),
+                e.clone(),
+                w.clone(),
+                RelaxationParam::Omega(0.5),
+                Some(1.2),
+            );
+
+            // Invariant: density(collision(dist, param)) == density(dist)
+            density(col_dist.clone())
+                .to_data()
+                .assert_approx_eq::<f32>(&(rho * 1.2).to_data(), Tolerance::default());
+        }
     }
 
     #[test]
@@ -685,7 +718,6 @@ mod tests {
         );
 
         equi_dist.clone().to_data().assert_approx_eq::<f32>(&expected_eq.to_data(), Tolerance::default());
-
     }
 
     #[test]

@@ -7,7 +7,7 @@ use crate::simulations::surface::fluids::lbm::d2q9::operations::{
 use burn::Tensor;
 use burn::config::Config;
 use burn::module::{Ignored, Module};
-use burn::prelude::{Backend, Bool, s};
+use burn::prelude::{Backend, Bool, ElementConversion, s};
 use burn::tensor::DType;
 
 /// Introspection trait for [`LBMD2Q9State`]
@@ -64,12 +64,14 @@ impl LBMD2Q9Config {
             s![.., ..],
             w.clone().unsqueeze::<4>().expand([height, width, 3, 3]) * initial_rho,
         );
+        let total_mass = state.clone().sum().into_scalar().elem();
 
         self.relaxation.validate();
 
         LBMD2Q9State {
             step_count: 0,
             dist: state,
+            correct_total_mass: total_mass,
             solid_mask,
             e,
             w,
@@ -83,6 +85,9 @@ impl LBMD2Q9Config {
 pub struct LBMD2Q9State<B: Backend> {
     /// The current simulation step.
     pub step_count: u64,
+
+    /// Total Mass.
+    pub correct_total_mass: f64,
 
     /// The grid velocity: ``[H, W, UY=3, UX=3]``
     /// Here the 0-9 velocity terms are unfolded
@@ -120,11 +125,6 @@ impl<B: Backend> LBMD2Q9State<B> {
         self.dist.dtype()
     }
 
-    /// Get the current simulation step count.
-    pub fn step_count(&self) -> u64 {
-        self.step_count
-    }
-
     /// Recast the datatype of the state.
     pub fn to_dtype(
         self,
@@ -136,6 +136,11 @@ impl<B: Backend> LBMD2Q9State<B> {
             w: self.w.cast(dtype),
             ..self
         }
+    }
+
+    /// Get the current simulation step count.
+    pub fn step_count(&self) -> u64 {
+        self.step_count
     }
 
     /// Set the current simulation step count.
@@ -153,12 +158,16 @@ impl<B: Backend> LBMD2Q9State<B> {
 
     /// Advance the world simulation by one step.
     pub fn advance_step(&mut self) {
+        // Is it worth smoothing correction over time?
+        let correction = self.correct_total_mass / self.current_total_mass();
+
         let dist = combined_isotropic_collision(
             self.dist.clone(),
             self.e.clone(),
             self.w.clone(),
             self.solid_mask.clone(),
             *self.relaxation,
+            Some(correction),
         );
 
         let interior_updates = stream_interior_cells(dist.clone());
@@ -171,5 +180,15 @@ impl<B: Backend> LBMD2Q9State<B> {
 
         self.dist = dist;
         self.step_count += 1;
+    }
+
+    /// Get the current mass of the simm.
+    pub fn current_total_mass(&mut self) -> f64 {
+        self.dist.clone().sum().into_scalar().elem()
+    }
+
+    /// Save the total energy of the system.
+    pub fn save_correct_total_mass(&mut self) {
+        self.correct_total_mass = self.current_total_mass();
     }
 }

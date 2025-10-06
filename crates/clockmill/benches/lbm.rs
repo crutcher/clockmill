@@ -33,7 +33,8 @@ fn bench_lbm_d2q9(c: &mut Criterion) {
 
         group.bench_function(format!("{:?} bgk_collision", dtype).as_str(), |b| {
             b.iter(|| {
-                let dist_col = naive_bgk_collision(dist.clone(), e.clone(), w.clone(), relaxation);
+                let dist_col =
+                    naive_bgk_collision(dist.clone(), e.clone(), w.clone(), relaxation, None);
 
                 black_box(dist_col.mean().into_scalar());
             })
@@ -47,6 +48,7 @@ fn bench_lbm_d2q9(c: &mut Criterion) {
                     w.clone(),
                     solid_mask.clone(),
                     relaxation,
+                    None,
                 );
 
                 black_box(dist_col.mean().into_scalar());
@@ -65,7 +67,7 @@ fn bench_lbm_d2q9(c: &mut Criterion) {
             b.iter(|| {
                 let dist = isotropic_spherical_reflection(
                     dist.clone(),
-                    naive_bgk_collision(dist.clone(), e.clone(), w.clone(), relaxation),
+                    naive_bgk_collision(dist.clone(), e.clone(), w.clone(), relaxation, None),
                     solid_mask.clone(),
                 );
 

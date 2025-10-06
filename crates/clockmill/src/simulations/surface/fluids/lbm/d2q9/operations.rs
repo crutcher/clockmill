@@ -315,20 +315,21 @@ pub fn relaxed_sum<B: Backend>(
 ///
 /// # Arguments
 /// - `dist`: ``[H, W, VY=3, VX=3]`` current distribution
-/// - `dist_eq`: ``[H, W, VY=3, VX=3]`` equilibrium distribution
+/// - `equi_dist`: ``[H, W, VY=3, VX=3]`` equilibrium distribution
 /// - `relaxation`: relaxation parameter.
 ///
 /// # Returns
-/// - `[H, W, VY=3, VX=3]` post-collision distribution
+/// - `[H, W, Y=3, VX=3]` post-collision distribution
+#[allow(unused)]
 pub fn naive_bgk_collision<B: Backend>(
     dist: Tensor<B, 4>,
     e: Tensor<B, 3>,
     w: Tensor<B, 2>,
     relaxation: RelaxationParam,
 ) -> Tensor<B, 4> {
-    let (rho, u) = moments(dist.clone(), e.clone());
-    let dist_eq = equilibrium(rho, u, e, w);
-    relaxed_sum(dist, dist_eq, relaxation)
+    let (source_rho, u) = moments(dist.clone(), e.clone());
+    let eq_dist = equilibrium(source_rho.clone(), u, e, w);
+    relaxed_sum(dist, eq_dist, relaxation)
 }
 
 /// Applies isotropic spherical solid reflection updates to [`naive_bgk_collision`].
@@ -440,6 +441,7 @@ mod tests {
 
     use burn::Tensor;
     use burn::backend::{Cuda, Wgpu};
+    use burn::tensor::DType::F32;
     use burn::tensor::{Distribution, Tolerance};
 
     #[test]
@@ -608,16 +610,19 @@ mod tests {
         type B = Cuda;
         let device = Default::default();
 
-        let e = direction_vectors(&device);
-        let w = weight_matrix(&device);
+        let dtype = F32;
 
-        let dist = Tensor::<B, 4>::random([20, 20, 3, 3], Distribution::Uniform(0.1, 1.0), &device);
+        let e = direction_vectors(&device).cast(dtype);
+        let w = weight_matrix(&device).cast(dtype);
+
+        let dist = Tensor::<B, 4>::random([20, 20, 3, 3], Distribution::Uniform(0.1, 1.0), &device)
+            .cast(dtype);
 
         let (rho, u) = moments(dist.clone(), e.clone());
-        let dist_eq = equilibrium(rho.clone(), u.clone(), e.clone(), w.clone());
+        let equi_dist = equilibrium(rho.clone(), u.clone(), e.clone(), w.clone());
 
         // Invariant: density(equilibrium(dist)) == density(dist)
-        density(dist_eq.clone())
+        density(equi_dist.clone())
             .to_data()
             .assert_approx_eq::<f32>(&rho.to_data(), Tolerance::default());
     }
@@ -627,22 +632,28 @@ mod tests {
         type B = Cuda;
         let device = Default::default();
 
-        let e = direction_vectors(&device);
-        let w = weight_matrix(&device);
+        let dtype = F32;
 
-        let dist = Tensor::<B, 4>::random([20, 20, 3, 3], Distribution::Uniform(0.1, 1.0), &device);
+        let e = direction_vectors(&device).cast(dtype);
+        let w = weight_matrix(&device).cast(dtype);
 
-        let dist_col = naive_bgk_collision(
+        let dist = Tensor::<B, 4>::random([20, 20, 3, 3], Distribution::Uniform(0.1, 1.0), &device)
+            .cast(dtype);
+        let rho = density(dist.clone());
+
+        let col_dist = naive_bgk_collision(
             dist.clone(),
             e.clone(),
             w.clone(),
             RelaxationParam::Omega(0.5),
         );
 
+        let c_rho = density(col_dist.clone());
+
         // Invariant: density(collision(dist, param)) == density(dist)
-        density(dist_col.clone())
+        c_rho
             .to_data()
-            .assert_approx_eq::<f32>(&density(dist).to_data(), Tolerance::default());
+            .assert_approx_eq::<f32>(&rho.to_data(), Tolerance::default());
     }
 
     #[test]
@@ -658,9 +669,9 @@ mod tests {
 
         let (rho, u) = moments(dist.clone(), e.clone());
 
-        let dist_eq = equilibrium(rho.clone(), u.clone(), e.clone(), w.clone());
+        let equi_dist = equilibrium(rho.clone(), u.clone(), e.clone(), w.clone());
 
-        density(dist_eq.clone())
+        density(equi_dist.clone())
             .to_data()
             .assert_approx_eq::<f32>(&rho.to_data(), Tolerance::default());
 
@@ -673,7 +684,7 @@ mod tests {
                 - 1.5 * u_sq.unsqueeze_dims::<4>(&[2, 3])
         );
 
-        dist_eq.clone().to_data().assert_approx_eq::<f32>(&expected_eq.to_data(), Tolerance::default());
+        equi_dist.clone().to_data().assert_approx_eq::<f32>(&expected_eq.to_data(), Tolerance::default());
 
     }
 

@@ -277,13 +277,6 @@ mod tests {
     use burn::tensor::TensorData;
 
     #[test]
-    fn test_setup() {
-        let device = Default::default();
-        let config = ConwayConfig { shape: [10, 10] };
-        let mut _conway: Conway<Wgpu> = config.init(&device);
-    }
-
-    #[test]
     fn test_logic() {
         let device = Default::default();
         let config = ConwayConfig { shape: [5, 5] };

@@ -1,9 +1,7 @@
 use burn::prelude::{Backend, s};
 use burn::tensor::DType::F32;
 use clap::Parser;
-use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{
-    RelaxationParam, moments, velocity_squared,
-};
+use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{RelaxationParam, moments};
 use clockmill::simulations::surface::fluids::lbm::d2q9::world::{
     LBMD2Q9Config, LBMD2Q9State, LBMMeta,
 };
@@ -114,7 +112,8 @@ fn run<B: Backend>(args: &Args) {
         .slice_fill(s![..2, ..], true)
         .slice_fill(s![-2.., ..], true);
 
-    let world_state = world_state.to_dtype(F32);
+    let mut world_state = world_state.to_dtype(F32);
+    world_state.save_correct_total_mass();
 
     // Create a new game and run it.
     let mut app = FlowVisApp {
@@ -170,33 +169,28 @@ pub struct FlowVisApp<B: Backend> {
 
 impl<B: Backend> FlowVisApp<B> {
     pub fn vis_cells(&self) -> Vec<Vec<(f32, f32)>> {
-        let [h, w] = self.world_state.shape();
+        let [height, width] = self.world_state.shape();
         let dist = &self.world_state.dist;
 
         let e = self.world_state.e.clone();
 
         let (_rho, u) = moments(dist.clone(), e.clone());
 
-        let u_sq = velocity_squared(u.clone()).sqrt();
-        // let cells = u_sq.sqrt();
+        let scale = u.clone().max().into_scalar();
 
-        let cells = u_sq;
-        // let scale = 10.0;
-        let scale = cells.clone().max().into_scalar();
-        // let scale = cells.clone().max().into_scalar();
-
-        let cells = (cells / scale).clamp(0.0, 1.0);
-        // let cells = cells.mul_scalar(3.14 / 2.0).sin();
+        let cells = (u / scale).clamp(0.0, 1.0);
+        let cells = cells.mul_scalar(std::f64::consts::PI / 2.0).sin();
 
         let cells = cells.cast(F32).to_data().into_vec::<f32>().unwrap();
-        assert_eq!(cells.len(), h * w);
+        assert_eq!(cells.len(), height * width * 2);
 
-        let mut result = vec![vec![(0.0, 0.0); w]; h];
-        for y in 0..h {
-            for x in 0..w {
-                let v: f32 = cells[(y * w) + x];
+        let mut result = vec![vec![(0.0, 0.0); width]; height];
+        for h in 0..height {
+            for w in 0..width {
+                let vy: f32 = cells[h * width * 2 + w * 2];
+                let vx: f32 = cells[h * width * 2 + w * 2 + 1];
 
-                result[y][x] = (v, 1.0 - v);
+                result[h][w] = (vy, vx);
             }
         }
         result

@@ -453,6 +453,88 @@ pub fn stream_interior_cells<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 4> {
     result
 }
 
+/// half-stream, y variant.
+///
+/// # Arguments
+///
+/// - `y_slice`: ``[H, 1, VY=3, 1]``
+pub fn half_stream_y<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 4> {
+    #[cfg(debug_assertions)]
+    let [h] = bimm_contracts::unpack_shape_contract!(
+        ["H", "W", "VY", "VX"],
+        &dist.shape().dims,
+        &["H"],
+        &[("W", 1), ("VY", 3), ("VX", 1)]
+    );
+
+    // Note the geometry: [H-2, 1, VY=3, 1, WIN_Y=3]
+    let windows = dist.unfold::<5, _>(0, 3, 1);
+
+    // [H-2, W=1, VY=3, WIN_Y=3]
+    let windows = windows.squeeze_dims::<4>(&[3]);
+
+    let result: Tensor<B, 4> = Tensor::cat(
+        (0..3)
+            .map(|vy| -> Tensor<B, 4> {
+                let source_vy = 2 - vy;
+                windows.clone().slice(s![.., 0, source_vy, vy])
+            })
+            .collect(),
+        2,
+    );
+
+    #[cfg(debug_assertions)]
+    bimm_contracts::assert_shape_contract_periodically!(
+        ["H" - "PAD", "W", "VY", "VX"],
+        &result.shape().dims,
+        &[("H", h), ("W", 1), ("PAD", 2), ("VY", 3), ("VX", 1)]
+    );
+
+    result
+}
+
+/// half-stream, x variant.
+///
+/// # Arguments
+///
+/// - `x_slice`: ``[1, W, 1, VY=3]``
+pub fn half_stream_x<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 4> {
+    #[cfg(debug_assertions)]
+    let [w] = bimm_contracts::unpack_shape_contract!(
+        ["H", "W", "VY", "VX"],
+        &dist.shape().dims,
+        &["W"],
+        &[("H", 1), ("VY", 1), ("VX", 3)]
+    );
+
+    // Note the geometry: [1, W-2, 1, VY=3, WIN_X=3]
+    let windows = dist.unfold::<5, _>(1, 3, 1);
+
+    // [H=1, W-2, VY=3, WIN_X=3]
+    let windows = windows.squeeze_dims::<4>(&[2]);
+
+    let result: Tensor<B, 4> = Tensor::cat(
+        (0..3)
+            .map(|vx| -> Tensor<B, 4> {
+                let source_vx = 2 - vx;
+                windows
+                    .clone()
+                    .slice(s![0, .., vx, source_vx])
+            })
+            .collect(),
+        3,
+    );
+
+    #[cfg(debug_assertions)]
+    bimm_contracts::assert_shape_contract_periodically!(
+        ["H", "W" - "PAD", "VY", "VX"],
+        &result.shape().dims,
+        &[("H", 1), ("W", w), ("PAD", 2), ("VY", 1), ("VX", 3)]
+    );
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

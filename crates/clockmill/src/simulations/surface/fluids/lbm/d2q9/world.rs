@@ -1,8 +1,8 @@
 //! # LBM D2Q9 World Module
 
 use crate::simulations::surface::fluids::lbm::d2q9::operations::{
-    RelaxationParam, combined_isotropic_collision, direction_vectors, stream_interior_cells,
-    weight_matrix,
+    RelaxationParam, combined_isotropic_collision, direction_vectors, half_stream_x, half_stream_y,
+    stream_interior_cells, weight_matrix,
 };
 use burn::Tensor;
 use burn::config::Config;
@@ -156,34 +156,115 @@ impl<B: Backend> LBMD2Q9State<B> {
         self.set_step_count(0)
     }
 
+    /// Get the mass correction term.
+    pub fn correction_term(&self) -> f64 {
+        self.correct_total_mass / self.current_total_mass()
+    }
+
+    fn left_edge(
+        &self,
+        thermal_dist: Tensor<B, 4>,
+    ) -> Tensor<B, 4> {
+        Tensor::cat(
+            vec![
+                thermal_dist.clone().slice(s![1..-1, 0, .., ..2]),
+                half_stream_y(thermal_dist.clone().slice(s![.., 1, .., 0])),
+            ],
+            3,
+        )
+    }
+    fn right_edge(
+        &self,
+        thermal_dist: Tensor<B, 4>,
+    ) -> Tensor<B, 4> {
+        Tensor::cat(
+            vec![
+                half_stream_y(thermal_dist.clone().slice(s![.., -2, .., -1])),
+                thermal_dist.clone().slice(s![1..-1, -1, .., -2..]),
+            ],
+            3,
+        )
+    }
+    fn top_edge(
+        &self,
+        thermal_dist: Tensor<B, 4>,
+    ) -> Tensor<B, 4> {
+        Tensor::cat(
+            vec![
+                thermal_dist.clone().slice(s![0, 1..-1, ..2, ..]),
+                half_stream_x(thermal_dist.clone().slice(s![1, .., 0, ..])),
+            ],
+            2,
+        )
+    }
+    fn bottom_edge(
+        &self,
+        thermal_dist: Tensor<B, 4>,
+    ) -> Tensor<B, 4> {
+        thermal_dist.clone().slice(s![-1, 1..-1])
+    }
+
     /// Advance the world simulation by one step.
     pub fn advance_step(&mut self) {
-        // Is it worth smoothing correction over time?
-        let correction = self.correct_total_mass / self.current_total_mass();
+        let dist = self.dist.clone();
 
-        let dist = combined_isotropic_collision(
-            self.dist.clone(),
-            self.e.clone(),
-            self.w.clone(),
-            self.solid_mask.clone(),
-            *self.relaxation,
-            Some(correction),
+        // Local Updates:
+        // 1. Internal cell collisions.
+        let thermal_dist = dist.clone().slice_assign(
+            s![1..-1, 1..-1],
+            combined_isotropic_collision(
+                dist.clone().slice(s![1..-1, 1..-1]),
+                self.e.clone(),
+                self.w.clone(),
+                self.solid_mask.clone().slice(s![1..-1, 1..-1]),
+                *self.relaxation,
+                Some(self.correction_term()),
+            ),
         );
+        // 2. Boundary cell updates.
 
-        let interior_updates = stream_interior_cells(dist.clone());
+        // Streaming Updates:
+        // 1. Internal cell streaming.
 
-        // TODO: handle boundary cells.
-        let dist = dist.slice_assign(s![1..-1, 1..-1], interior_updates);
+        let streaming_dist = Tensor::cat(
+            vec![
+                Tensor::cat(
+                    vec![
+                        thermal_dist.clone().slice(s![0, 0]),
+                        self.top_edge(thermal_dist.clone()),
+                        thermal_dist.clone().slice(s![0, -1]),
+                    ],
+                    1,
+                ),
+                Tensor::cat(
+                    vec![
+                        self.left_edge(thermal_dist.clone()),
+                        stream_interior_cells(thermal_dist.clone()),
+                        self.right_edge(thermal_dist.clone()),
+                    ],
+                    1,
+                ),
+                Tensor::cat(
+                    vec![
+                        thermal_dist.clone().slice(s![-1, 0]),
+                        self.bottom_edge(thermal_dist.clone()),
+                        thermal_dist.clone().slice(s![-1, -1]),
+                    ],
+                    1,
+                ),
+            ],
+            0,
+        );
 
         // TODO: better handle of numerical instability.
         // let dist = dist.clone().mask_fill(dist.is_finite().bool_not(), 0.0);
 
-        self.dist = dist;
+        self.dist = streaming_dist;
         self.step_count += 1;
     }
 
     /// Get the current mass of the simm.
-    pub fn current_total_mass(&mut self) -> f64 {
+    pub fn current_total_mass(&self) -> f64 {
         self.dist.clone().sum().into_scalar().elem()
     }
 

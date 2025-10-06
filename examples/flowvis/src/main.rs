@@ -1,6 +1,6 @@
 use burn::Tensor;
 use burn::prelude::{Backend, Bool, s};
-use burn::tensor::DType::F32;
+use burn::tensor::DType::{F32, F64};
 use clap::Parser;
 use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{
     RelaxationParam, direction_vectors, macroscopic_momentum,
@@ -90,6 +90,8 @@ fn run<B: Backend>(args: &Args) {
     // Change this to OpenGL::V2_1 if not working.
     let opengl = OpenGL::V3_2;
 
+    let dtype = F64;
+
     // Create a Glutin window.
     let mut window: Window = WindowSettings::new(
         "flowvis",
@@ -123,7 +125,7 @@ fn run<B: Backend>(args: &Args) {
         .slice_fill(s![..2, ..], true)
         .slice_fill(s![-2.., ..], true);
 
-    let mut world_state = world_state.to_dtype(F32);
+    let mut world_state = world_state.to_dtype(dtype);
     world_state.save_correct_total_mass();
 
     for _ in 0..args.init_skip_steps {

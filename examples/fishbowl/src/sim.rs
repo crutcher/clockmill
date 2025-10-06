@@ -47,10 +47,6 @@ impl<B: Backend> Simulation<B> {
         }
     }
 
-    pub fn _get_state(&self) -> Tensor<B, 2, Bool> {
-        self.state.lock().unwrap().clone()
-    }
-
     pub fn shutdown(mut self) {
         self.shutdown.store(true, Ordering::Relaxed);
         if let Some(handle) = self.handle.take() {

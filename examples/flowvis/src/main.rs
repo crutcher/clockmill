@@ -1,18 +1,22 @@
-use burn::prelude::{Backend, s};
+use burn::Tensor;
+use burn::prelude::{Backend, Bool, s};
 use burn::tensor::DType::F32;
 use clap::Parser;
 use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{
-    RelaxationParam, macroscopic_momentum,
+    RelaxationParam, direction_vectors, macroscopic_momentum,
 };
-use clockmill::simulations::surface::fluids::lbm::d2q9::world::{
-    LBMD2Q9Config, LBMD2Q9State, LBMMeta,
-};
+use clockmill::simulations::surface::fluids::lbm::d2q9::world::{LBMD2Q9Config, LBMD2Q9State};
 use glutin_window::GlutinWindow as Window;
 use opengl_graphics::{GlGraphics, OpenGL};
 use piston::event_loop::{EventSettings, Events};
-use piston::input::{RenderEvent, UpdateEvent};
+use piston::input::RenderEvent;
 use piston::window::WindowSettings;
-use piston::{EventLoop, OpenGLWindow, RenderArgs, UpdateArgs};
+use piston::{EventLoop, OpenGLWindow, RenderArgs};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::thread::JoinHandle;
+use std::time::Duration;
 
 fn parse_shape(s: &str) -> Result<[usize; 2], String> {
     if s.contains(",") {
@@ -38,15 +42,19 @@ fn parse_shape(s: &str) -> Result<[usize; 2], String> {
 #[command(long_about = None)]
 pub struct Args {
     /// The grid shape as `HEIGHT,WIDTH`, or `SIZE`.
-    #[arg(long, value_parser=parse_shape, default_value="300")]
+    #[arg(long, value_parser=parse_shape, default_value="400")]
     pub grid_shape: [usize; 2],
 
     /// The max frames per second.
     #[arg(long, default_value_t = 60)]
     pub fps: u64,
 
+    /// The tics per second.
+    #[arg(long, default_value_t = 60.)]
+    pub tps: f32,
+
     /// The initial window zoom.
-    #[arg(long, default_value_t = 4.0)]
+    #[arg(long, default_value_t = 2.5)]
     pub zoom: f64,
 
     /// The number of steps to take per frame.
@@ -58,7 +66,7 @@ pub struct Args {
     pub init_skip_steps: usize,
 
     /// The collision relaxation tau.
-    #[arg(long, default_value_t = 1.0)]
+    #[arg(long, default_value_t = 0.9)]
     pub tau: f64,
 }
 
@@ -109,6 +117,7 @@ fn run<B: Backend>(args: &Args) {
     world_state.solid_mask = world_state
         .solid_mask
         .slice_fill(s![30, 40..60], true)
+        .slice_fill(s![100, 50..90], true)
         .slice_fill(s![.., ..2], true)
         .slice_fill(s![.., -2..], true)
         .slice_fill(s![..2, ..], true)
@@ -117,15 +126,24 @@ fn run<B: Backend>(args: &Args) {
     let mut world_state = world_state.to_dtype(F32);
     world_state.save_correct_total_mass();
 
+    for _ in 0..args.init_skip_steps {
+        world_state.advance_step();
+    }
+
+    let is_solid: Tensor<B, 2, Bool> = world_state.solid_mask.clone();
+
+    let sim = Simulation::new(
+        world_state,
+        std::time::Duration::from_secs_f32(1.0 / args.tps),
+    );
+
     // Create a new game and run it.
     let mut app = FlowVisApp {
         gl: GlGraphics::new(opengl),
-        world_state,
+        state_handle: sim.state.clone(),
+        solid_mask: is_solid,
         step_rate: args.step_rate,
     };
-    for _ in 0..args.init_skip_steps {
-        app.advance_frame();
-    }
 
     let mut events = Events::new(EventSettings::new());
     events.set_ups(args.fps);
@@ -134,51 +152,81 @@ fn run<B: Backend>(args: &Args) {
         if let Some(render_args) = e.render_args() {
             app.render(&render_args);
         }
+    }
 
-        if let Some(update_args) = e.update_args() {
-            app.update(&update_args);
+    sim.shutdown();
+}
+
+pub struct Simulation<B: Backend> {
+    handle: Option<JoinHandle<()>>,
+    shutdown: Arc<AtomicBool>,
+    pub state: Arc<Mutex<Tensor<B, 4>>>,
+}
+
+impl<B: Backend> Simulation<B> {
+    pub fn new(
+        world: LBMD2Q9State<B>,
+        step_duration: Duration,
+    ) -> Self {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let state = Arc::new(Mutex::new(world.dist.clone()));
+
+        let shutdown_clone = shutdown.clone();
+        let state_clone = state.clone();
+
+        let handle = thread::spawn(move || {
+            let mut world = world;
+
+            while !shutdown_clone.load(Ordering::Relaxed) {
+                world.advance_step();
+
+                // Export
+                *state_clone.lock().unwrap() = world.dist.clone();
+
+                thread::sleep(step_duration);
+            }
+        });
+
+        Simulation {
+            handle: Some(handle),
+            shutdown,
+            state,
+        }
+    }
+    pub fn shutdown(mut self) {
+        self.shutdown.store(true, Ordering::Relaxed);
+        if let Some(handle) = self.handle.take() {
+            handle.join().unwrap();
         }
     }
 }
 
-/*
-// arctan(x) = ln(
-//   (x/sqrt(1+x²)) + sqrt(1 + (x²/(1+x²)))
-// )
-fn arctan<B: Backend, const D: usize>(x: &Tensor<B, D>) -> Tensor<B, D> {
-    let x2: Tensor<B, D> = fast_powi_2(x.clone());
-    let t: Tensor<B, D> = 1.0 + x2.clone();
-
-    (
-        (x.clone() / t.clone().sqrt())
-            + ((x2 / t) + 1).sqrt()
-    ).log()
-}
-
-fn atan2<B: Backend, const D: usize>(y: &Tensor<B, D>, x: &Tensor<B, D>) -> Tensor<B, D> {
-    if x
-    let at = arctan(y/x)
-
-}
-
- */
-
 pub struct FlowVisApp<B: Backend> {
     pub gl: GlGraphics, // OpenGL drawing backend.
-    pub world_state: LBMD2Q9State<B>,
+    pub state_handle: Arc<Mutex<Tensor<B, 4>>>,
+    pub solid_mask: Tensor<B, 2, Bool>,
     pub step_rate: usize,
 }
 
 impl<B: Backend> FlowVisApp<B> {
-    pub fn vis_cells(&self) -> Vec<Vec<(f32, f32)>> {
-        let [height, width] = self.world_state.shape();
-        let dist = &self.world_state.dist;
+    pub fn get_world_shape(&self) -> [usize; 2] {
+        self.solid_mask.shape().dims()
+    }
 
-        let e = self.world_state.e.clone();
+    pub fn get_state(&self) -> Tensor<B, 4> {
+        let lock = self.state_handle.lock();
+        lock.unwrap().clone()
+    }
+
+    pub fn vis_cells(&self) -> Vec<Vec<(f32, f32)>> {
+        let [height, width] = self.get_world_shape();
+        let state = self.get_state();
+
+        let e = direction_vectors(&state.device()).cast(state.dtype());
 
         // let (_rho, u) = moments(dist.clone(), e.clone());
         // let cells = fast_powi_2(u);
-        let cells = macroscopic_momentum(dist.clone(), e.clone());
+        let cells = macroscopic_momentum(state.clone(), e.clone());
 
         let scale = cells.clone().max().into_scalar();
         let cells = ((cells / scale) + 1.0) / 2.0;
@@ -200,14 +248,13 @@ impl<B: Backend> FlowVisApp<B> {
     }
 
     pub fn solid_cells(&self) -> Vec<Vec<bool>> {
-        let [h, w] = self.world_state.shape();
-        let mask = &self.world_state.solid_mask;
+        let [height, width] = self.get_world_shape();
 
-        let cells = mask.to_data().into_vec::<u8>().unwrap();
-        let mut result = vec![vec![false; w]; h];
-        for y in 0..h {
-            for x in 0..w {
-                result[y][x] = cells[(y * w) + x] == 1;
+        let cells = self.solid_mask.clone().to_data().into_vec::<u8>().unwrap();
+        let mut result = vec![vec![false; width]; height];
+        for y in 0..height {
+            for x in 0..width {
+                result[y][x] = cells[(y * width) + x] == 1;
             }
         }
         result
@@ -222,17 +269,17 @@ impl<B: Backend> FlowVisApp<B> {
         let vis_cells = self.vis_cells();
         let solid_cells = self.solid_cells();
 
-        let [h, w] = self.world_state.shape();
+        let [height, width] = self.get_world_shape();
         let [view_width, view_height] = args.viewport().draw_size;
 
         let [x_step, y_step] = [
-            (view_width as f64) / (w as f64),
-            (view_height as f64) / (h as f64),
+            (view_width as f64) / (width as f64),
+            (view_height as f64) / (height as f64),
         ];
 
         self.gl.draw(args.viewport(), |c, gl| {
-            for y in 0..h {
-                for x in 0..w {
+            for y in 0..height {
+                for x in 0..width {
                     let (uy, ux) = vis_cells[y][x];
                     let is_solid = solid_cells[y][x];
 
@@ -252,18 +299,5 @@ impl<B: Backend> FlowVisApp<B> {
                 }
             }
         });
-    }
-
-    pub fn update(
-        &mut self,
-        _args: &UpdateArgs,
-    ) {
-        self.advance_frame();
-    }
-
-    pub fn advance_frame(&mut self) {
-        for _ in 0..self.step_rate {
-            self.world_state.advance_step();
-        }
     }
 }

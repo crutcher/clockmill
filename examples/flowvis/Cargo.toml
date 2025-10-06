@@ -6,6 +6,7 @@ rust-version.workspace = true
 
 [dependencies]
 burn = { workspace = true, features = ["fusion", "autotune"] }
+bimm-contracts = { workspace = true }
 clockmill = { path = "../../crates/clockmill" }
 clap = { workspace = true, features = ["derive"] }
 

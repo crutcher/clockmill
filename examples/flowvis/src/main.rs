@@ -1,9 +1,9 @@
 use burn::Tensor;
-use burn::prelude::{Backend, Bool, s};
-use burn::tensor::DType::{F32, F64};
+use burn::prelude::{Backend, Bool, ElementConversion, s};
+use burn::tensor::DType::F32;
 use clap::Parser;
 use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{
-    RelaxationParam, direction_vectors, macroscopic_momentum,
+    RelaxationParam, density, direction_vectors, macroscopic_momentum,
 };
 use clockmill::simulations::surface::fluids::lbm::d2q9::world::{LBMD2Q9Config, LBMD2Q9State};
 use glutin_window::GlutinWindow as Window;
@@ -46,11 +46,11 @@ pub struct Args {
     pub grid_shape: [usize; 2],
 
     /// The max frames per second.
-    #[arg(long, default_value_t = 60)]
+    #[arg(long, default_value_t = 40)]
     pub fps: u64,
 
     /// The tics per second.
-    #[arg(long, default_value_t = 60.)]
+    #[arg(long, default_value_t = 40.)]
     pub tps: f32,
 
     /// The initial window zoom.
@@ -90,7 +90,7 @@ fn run<B: Backend>(args: &Args) {
     // Change this to OpenGL::V2_1 if not working.
     let opengl = OpenGL::V3_2;
 
-    let dtype = F64;
+    let dtype = F32;
 
     // Create a Glutin window.
     let mut window: Window = WindowSettings::new(
@@ -176,9 +176,29 @@ impl<B: Backend> Simulation<B> {
             let mut world = world;
 
             while !shutdown_clone.load(Ordering::Relaxed) {
-                world.advance_step();
+                if false {
+                    let dist = world.dist.clone();
+
+                    // Outflow.
+                    let outflow: f64 = dist
+                        .clone()
+                        .slice(s![-11..-1, -2, .., 2])
+                        .sum()
+                        .into_scalar()
+                        .elem();
+                    let dist = dist.slice_fill(s![-11..-1, -2, .., 2], outflow / 60.0);
+
+                    // Inflow.
+                    let dist = dist.clone().slice_assign(
+                        s![1, 45..55, 2, ..],
+                        dist.clone().slice(s![1, 45..55, 2, ..]) + (outflow / 60.0),
+                    );
+
+                    world.dist = dist;
+                }
 
                 // Export
+                world.advance_step();
                 *state_clone.lock().unwrap() = world.dist.clone();
 
                 thread::sleep(step_duration);
@@ -264,6 +284,12 @@ impl<B: Backend> FlowVisApp<B> {
     ) {
         use graphics::*;
 
+        let rho = density(self.get_state());
+        let rho = rho.powi_scalar(2.0);
+        let max_rho = rho.clone().max().into_scalar();
+        let rho = rho.div_scalar(max_rho);
+        let rho = rho.cast(F32).to_data().into_vec::<f32>().unwrap();
+
         let vis_cells = self.vis_cells();
         let solid_cells = self.solid_cells();
 
@@ -281,10 +307,12 @@ impl<B: Backend> FlowVisApp<B> {
                     let (uy, ux) = vis_cells[y][x];
                     let is_solid = solid_cells[y][x];
 
+                    let d = rho[y * width + x];
+
                     let color = if is_solid {
                         [1., 1., 1., 1.]
                     } else if uy.is_finite() && ux.is_finite() {
-                        [0.0, uy, ux, self.opacity]
+                        [d, uy, ux, self.opacity]
                     } else {
                         [0., 0., 0., 1.]
                     };

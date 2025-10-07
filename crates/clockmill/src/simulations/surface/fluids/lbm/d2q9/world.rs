@@ -1,12 +1,12 @@
 //! # LBM D2Q9 World Module
 
 use crate::simulations::surface::fluids::lbm::d2q9::operations::{
-    RelaxationParam, combined_isotropic_collision, direction_vectors, half_stream_x, half_stream_y,
-    stream_interior, weight_matrix,
+    RelaxationParam, bgk_collision, direction_vectors, half_stream_x, half_stream_y,
+    stream_interior, weight_matrix, with_spherical_reflection,
 };
 use burn::Tensor;
 use burn::config::Config;
-use burn::module::{Ignored, Module};
+use burn::module::Module;
 use burn::prelude::{Backend, Bool, ElementConversion, s};
 use burn::tensor::DType;
 
@@ -68,6 +68,9 @@ impl LBMD2Q9Config {
 
         self.relaxation.validate();
 
+        let omega =
+            Tensor::<B, 2>::ones([height, width], device) * self.relaxation.as_omega_value();
+
         LBMD2Q9State {
             step_count: 0,
             dist: state,
@@ -75,7 +78,7 @@ impl LBMD2Q9Config {
             solid_mask,
             e,
             w,
-            relaxation: Ignored(self.relaxation),
+            omega,
         }
     }
 }
@@ -97,14 +100,14 @@ pub struct LBMD2Q9State<B: Backend> {
     /// The solid mask: ``[H, W]``
     pub solid_mask: Tensor<B, 2, Bool>,
 
+    /// The relaxation field.
+    pub omega: Tensor<B, 2>,
+
     /// Direction Vectors
     pub e: Tensor<B, 3>,
 
     /// Weight Matrix
     pub w: Tensor<B, 2>,
-
-    /// Relaxation Param
-    pub relaxation: Ignored<RelaxationParam>,
 }
 
 impl<B: Backend> LBMMeta for LBMD2Q9State<B> {
@@ -224,14 +227,14 @@ impl<B: Backend> LBMD2Q9State<B> {
 
         // Local Updates:
         // 1. Internal cell collisions.
-        let thermal_dist = combined_isotropic_collision(
+        let col_dist = bgk_collision(
             dist.clone(),
             self.e.clone(),
             self.w.clone(),
-            solid_mask,
-            *self.relaxation,
+            self.omega.clone(),
             Some(self.correction_term()),
         );
+        let thermal_dist = with_spherical_reflection(dist.clone(), col_dist, solid_mask);
 
         // 2. Boundary cell updates.
         // For now, none; boundary cells are all effectively reflective.

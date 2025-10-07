@@ -42,7 +42,7 @@ fn parse_shape(s: &str) -> Result<[usize; 2], String> {
 #[command(long_about = None)]
 pub struct Args {
     /// The grid shape as `HEIGHT,WIDTH`, or `SIZE`.
-    #[arg(long, value_parser=parse_shape, default_value="400")]
+    #[arg(long, value_parser=parse_shape, default_value="250")]
     pub grid_shape: [usize; 2],
 
     /// The max frames per second.
@@ -119,7 +119,12 @@ fn run<B: Backend>(args: &Args) {
     world_state.solid_mask = world_state
         .solid_mask
         .slice_fill(s![30, 40..60], true)
-        .slice_fill(s![100, 50..90], true);
+        .slice_fill(s![150, 50..150], true);
+
+    world_state.omega = world_state
+        .omega
+        .slice_fill(s![100..200, 100..200], 0.05)
+        .slice_fill(s![125..175, 125..175], 1.0 / args.tau);
 
     let mut world_state = world_state.to_dtype(dtype);
     world_state.save_correct_total_mass();

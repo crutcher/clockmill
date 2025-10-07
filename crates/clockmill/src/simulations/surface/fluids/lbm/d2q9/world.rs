@@ -214,19 +214,23 @@ impl<B: Backend> LBMD2Q9State<B> {
     pub fn advance_step(&mut self) {
         let dist = self.dist.clone();
 
+        let solid_mask = self.solid_mask.clone()
+            .slice_fill(s![0, ..], true)
+            .slice_fill(s![-1, ..], true)
+            .slice_fill(s![.., 0], true)
+            .slice_fill(s![.., -1], true);
+
         // Local Updates:
         // 1. Internal cell collisions.
-        let thermal_dist = dist.clone().slice_assign(
-            s![1..-1, 1..-1],
-            combined_isotropic_collision(
-                dist.clone().slice(s![1..-1, 1..-1]),
+        let thermal_dist = combined_isotropic_collision(
+                dist.clone(),
                 self.e.clone(),
                 self.w.clone(),
-                self.solid_mask.clone().slice(s![1..-1, 1..-1]),
+                solid_mask,
                 *self.relaxation,
                 Some(self.correction_term()),
-            ),
         );
+
         // 2. Boundary cell updates.
         // For now, none; boundary cells are all effectively reflective.
 

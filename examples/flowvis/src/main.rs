@@ -119,11 +119,7 @@ fn run<B: Backend>(args: &Args) {
     world_state.solid_mask = world_state
         .solid_mask
         .slice_fill(s![30, 40..60], true)
-        .slice_fill(s![100, 50..90], true)
-        .slice_fill(s![.., ..2], true)
-        .slice_fill(s![.., -2..], true)
-        .slice_fill(s![..2, ..], true)
-        .slice_fill(s![-2.., ..], true);
+        .slice_fill(s![100, 50..90], true);
 
     let mut world_state = world_state.to_dtype(dtype);
     world_state.save_correct_total_mass();

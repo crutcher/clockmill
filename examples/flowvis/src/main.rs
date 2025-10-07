@@ -5,13 +5,16 @@ use clap::Parser;
 use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{
     RelaxationParam, density, direction_vectors, macroscopic_momentum,
 };
-use clockmill::simulations::surface::fluids::lbm::d2q9::world::{LBMD2Q9Config, LBMD2Q9State};
+use clockmill::simulations::surface::fluids::lbm::d2q9::world::{
+    LBMD2Q9Config, LBMD2Q9State, LBMMeta,
+};
 use glutin_window::GlutinWindow as Window;
 use opengl_graphics::{GlGraphics, OpenGL};
 use piston::event_loop::{EventSettings, Events};
 use piston::input::RenderEvent;
 use piston::window::WindowSettings;
 use piston::{EventLoop, OpenGLWindow, RenderArgs};
+use rand::Rng;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -62,7 +65,7 @@ pub struct Args {
     pub opacity: f32,
 
     /// The number of steps to skip on init.
-    #[arg(long, default_value_t = 0)]
+    #[arg(long, default_value_t = 1)]
     pub init_skip_steps: usize,
 
     /// The collision relaxation tau.
@@ -119,12 +122,17 @@ fn run<B: Backend>(args: &Args) {
     world_state.solid_mask = world_state
         .solid_mask
         .slice_fill(s![30, 40..60], true)
-        .slice_fill(s![150, 50..150], true);
+        .slice_fill(s![125, 75..150], true)
+        .slice_fill(s![150, 50..75], true)
+        .slice_fill(s![150, 100..125], true);
 
     world_state.omega = world_state
         .omega
-        .slice_fill(s![100..200, 100..200], 0.05)
-        .slice_fill(s![125..175, 125..175], 1.0 / args.tau);
+        .slice_fill(s![-150..-50, -150..-50], 0.05)
+        .slice_fill(
+            s![-125..-75, -125..-75],
+            RelaxationParam::Tau(args.tau).as_omega_value(),
+        );
 
     let mut world_state = world_state.to_dtype(dtype);
     world_state.save_correct_total_mass();
@@ -181,23 +189,23 @@ impl<B: Backend> Simulation<B> {
             let mut world = world;
 
             while !shutdown_clone.load(Ordering::Relaxed) {
-                if false {
-                    let dist = world.dist.clone();
+                if false && world.step_count.is_multiple_of(250) {
+                    let [width, height] = world.shape();
+                    let mut dist = world.dist.clone();
 
-                    // Outflow.
-                    let outflow: f64 = dist
-                        .clone()
-                        .slice(s![-11..-1, -2, .., 2])
-                        .sum()
-                        .into_scalar()
-                        .elem();
-                    let dist = dist.slice_fill(s![-11..-1, -2, .., 2], outflow / 60.0);
+                    let extra: f64 = dist.clone().max().into_scalar().elem();
 
-                    // Inflow.
-                    let dist = dist.clone().slice_assign(
-                        s![1, 45..55, 2, ..],
-                        dist.clone().slice(s![1, 45..55, 2, ..]) + (outflow / 60.0),
-                    );
+                    let k = rand::rng().random_range(2..=4);
+                    for _ in 0..k {
+                        let ry = rand::rng().random_range(1..=height - 1);
+                        let rx = rand::rng().random_range(1..=width - 1);
+
+                        let existing: f64 =
+                            dist.clone().slice(s![ry, rx, 1, 1]).into_scalar().elem();
+                        dist = dist.slice_fill(s![ry, rx, 1, 1], existing + extra);
+
+                        world.correct_total_mass += extra;
+                    }
 
                     world.dist = dist;
                 }

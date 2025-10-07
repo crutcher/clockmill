@@ -14,6 +14,7 @@ piston2d-graphics = { workspace = true}
 pistoncore-glutin_window = { workspace = true}
 piston2d-opengl_graphics = { workspace = true}
 gl = {workspace = true}
+rand = { workspace = true }
 
 [lints]
 workspace = true

@@ -4,8 +4,8 @@ use burn::prelude::{Bool, s};
 use burn::tensor::DType::{F16, F32};
 use burn::tensor::Distribution;
 use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{
-    RelaxationParam, combined_isotropic_collision, direction_vectors,
-    isotropic_spherical_reflection, naive_bgk_collision, stream_interior, weight_matrix,
+    RelaxationParam, combined_isotropic_collision, direction_vectors, naive_bgk_collision,
+    stream_interior, weight_matrix, with_spherical_reflection,
 };
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
@@ -65,7 +65,7 @@ fn bench_lbm_d2q9(c: &mut Criterion) {
 
         group.bench_function(format!("{:?} update", dtype).as_str(), |b| {
             b.iter(|| {
-                let dist = isotropic_spherical_reflection(
+                let dist = with_spherical_reflection(
                     dist.clone(),
                     naive_bgk_collision(dist.clone(), e.clone(), w.clone(), relaxation, None),
                     solid_mask.clone(),

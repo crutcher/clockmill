@@ -4,6 +4,24 @@
 //!
 //! See:
 //! * [Wikipedia](https://en.wikipedia.org/wiki/Lattice_Boltzmann_methods).
+//!
+//! ## Distribution Structure
+//!
+//! This is a "D2Q9" LBM Grid; "D2" for 2-dimension, "Q9" for 9-direction.
+//!
+//! This library uses a ``[H, W, VY=3, VX=3]`` layout.
+//! * ``(H, W)`` determines a cell's spatial location.
+//! * at a given ``(H, W)`` point, the 3x3 ``[VY=3, VX=3]`` grid describes
+//!   the local moving particle population.
+//!
+//! The ``[VY=3, VX=3]`` populations are each moving away from the center
+//! at ``(1, 1)``, which is stationary.
+//!
+//! The ``(y, x)`` directions correspond with the direction vectors ``(y-1, x-1)``;
+//! so ``[H, W, 0, 0]`` is the population at ``(H, W)`` which is moving
+//! in the ``(-1, -1)`` direction.
+//!
+//! This direction is also available in the `direction_vectors()` interface.
 use crate::compat::FRAC_1_SQRT_3;
 use crate::compat::operations::{fast_powi_2, sum_dims};
 use burn::Tensor;
@@ -40,9 +58,9 @@ pub fn density<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 2> {
 pub fn direction_indices<B: Backend>(device: &B::Device) -> Tensor<B, 3, Int> {
     Tensor::<B, 3, Int>::from_data(
         [
-            [[1, -1], [1, 0], [1, 1]],
-            [[0, -1], [0, 0], [0, 1]],
             [[-1, -1], [-1, 0], [-1, 1]],
+            [[0, -1], [0, 0], [0, 1]],
+            [[1, -1], [1, 0], [1, 1]],
         ],
         device,
     )
@@ -347,6 +365,19 @@ pub fn naive_bgk_collision<B: Backend>(
     relaxed_sum(dist, eq_dist, relaxation, correction)
 }
 
+/// Computes spherical solid reflection updates.
+///
+/// This point as a sphere, normal to all directions.
+///
+/// # Arguments
+/// - `dist`: ``[H, W, VY=3, VX=3]`` pre-collision distribution
+///
+/// # Returns
+/// - ``[H, W, VY=3, VX=3]`` distribution.
+pub fn spherical_reflection<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 4> {
+    dist.flip([2, 3])
+}
+
 /// Applies isotropic spherical solid reflection updates to [`naive_bgk_collision`].
 ///
 /// This models every solid point as a sphere, normal to all directions.
@@ -358,14 +389,14 @@ pub fn naive_bgk_collision<B: Backend>(
 ///
 /// # Returns
 /// - ``[H, W, VY=3, VX=3]`` distribution.
-pub fn isotropic_spherical_reflection<B: Backend>(
+pub fn with_spherical_reflection<B: Backend>(
     pre_dist: Tensor<B, 4>,
     naive_dist: Tensor<B, 4>,
     solid_mask: Tensor<B, 2, Bool>,
 ) -> Tensor<B, 4> {
     naive_dist.mask_where(
         solid_mask.unsqueeze_dims::<4>(&[-1, -1]),
-        pre_dist.flip([2, 3]),
+        spherical_reflection(pre_dist),
     )
 }
 
@@ -373,7 +404,7 @@ pub fn isotropic_spherical_reflection<B: Backend>(
 ///
 /// This combines:
 /// - [`bgk_collision`]
-/// - [`isotropic_spherical_reflection`]
+/// - [`with_spherical_reflection`]
 ///
 /// # Arguments
 /// - `pre_dist`: ``[H, W, VY=3, VX=3]`` pre-collision distribution
@@ -392,8 +423,10 @@ pub fn combined_isotropic_collision<B: Backend>(
     relaxation: RelaxationParam,
     correction: Option<f64>,
 ) -> Tensor<B, 4> {
-    let naive_dist = naive_bgk_collision(dist.clone(), e, w, relaxation, correction);
-    isotropic_spherical_reflection(dist, naive_dist, solid_mask)
+    let pre_dist = dist;
+
+    let naive_dist = naive_bgk_collision(pre_dist.clone(), e, w, relaxation, correction);
+    with_spherical_reflection(pre_dist, naive_dist, solid_mask)
 }
 
 /// Apply the streaming update step to the non-border cells of a population.
@@ -582,9 +615,9 @@ mod tests {
         e.to_data().assert_eq(
             &Tensor::<B, 3>::from_data(
                 [
-                    [[1., -1.], [1., 0.], [1., 1.]],
-                    [[0., -1.], [0., 0.], [0., 1.]],
                     [[-1., -1.], [-1., 0.], [-1., 1.]],
+                    [[0., -1.], [0., 0.], [0., 1.]],
+                    [[1., -1.], [1., 0.], [1., 1.]],
                 ],
                 &device,
             )
@@ -632,7 +665,7 @@ mod tests {
         let momentum = macroscopic_momentum(dist.clone(), e.clone());
 
         momentum.clone().to_data().assert_approx_eq::<f32>(
-            &Tensor::<B, 3>::from_data([[[1., -1.], [-15., 5.]]], &device).to_data(),
+            &Tensor::<B, 3>::from_data([[[-1., -1.], [15., 5.]]], &device).to_data(),
             Tolerance::default(),
         );
 
@@ -643,8 +676,8 @@ mod tests {
         u.clone().to_data().assert_approx_eq::<f32>(
             &Tensor::<B, 3>::from_data(
                 [[
-                    [1. / rho_data[0], -1. / rho_data[0]],
-                    [-15. / rho_data[1], 5. / rho_data[1]],
+                    [-1. / rho_data[0], -1. / rho_data[0]],
+                    [15. / rho_data[1], 5. / rho_data[1]],
                 ]],
                 &device,
             )
@@ -682,14 +715,14 @@ mod tests {
             &Tensor::<B, 5>::from_data(
                 [[
                     [
-                        [[0.1, 2.], [0.1, 0.], [0.1, -2.]],
-                        [[0., 2.], [0., 0.], [0., -2.]],
                         [[-0.1, 2.], [-0.1, 0.], [-0.1, -2.]],
+                        [[0., 2.], [0., 0.], [0., -2.]],
+                        [[0.1, 2.], [0.1, 0.], [0.1, -2.]],
                     ],
                     [
-                        [[0.5, 1.5], [0.5, 0.], [0.5, -1.5]],
-                        [[0., 1.5], [0., 0.], [0., -1.5]],
                         [[-0.5, 1.5], [-0.5, 0.], [-0.5, -1.5]],
+                        [[0., 1.5], [0., 0.], [0., -1.5]],
+                        [[0.5, 1.5], [0.5, 0.], [0.5, -1.5]],
                     ],
                 ]],
                 &device,

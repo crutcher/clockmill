@@ -359,10 +359,27 @@ pub fn naive_bgk_collision<B: Backend>(
     relaxation: RelaxationParam,
     correction: Option<f64>,
 ) -> Tensor<B, 4> {
+    let omega =
+        Tensor::<B, 1>::from_data([relaxation.as_omega_value()], &dist.device()).reshape([1, 1]);
+    bgk_collision(dist, e, w, omega, correction)
+}
+
+/// Collision with spatial relaxation.
+#[allow(unused)]
+pub fn bgk_collision<B: Backend>(
+    dist: Tensor<B, 4>,
+    e: Tensor<B, 3>,
+    w: Tensor<B, 2>,
+    omega: Tensor<B, 2>,
+    correction: Option<f64>,
+) -> Tensor<B, 4> {
     let (source_rho, u) = moments(dist.clone(), e.clone());
     let eq_dist = equilibrium(source_rho.clone(), u, e, w);
 
-    relaxed_sum(dist, eq_dist, relaxation, correction)
+    let omega = omega.unsqueeze_dims::<4>(&[2, 3]);
+
+    let correction = correction.unwrap_or(1.0);
+    dist * (correction * (1.0 - omega.clone())) + eq_dist * (correction * omega)
 }
 
 /// Computes spherical solid reflection updates.

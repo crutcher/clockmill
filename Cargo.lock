@@ -2525,7 +2525,6 @@ dependencies = [
 name = "flowvis"
 version = "0.0.0"
 dependencies = [
- "bimm-contracts",
  "burn",
  "clap",
  "clockmill",

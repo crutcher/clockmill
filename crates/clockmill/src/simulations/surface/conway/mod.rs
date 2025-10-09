@@ -3,7 +3,7 @@
 use crate::convolve::surface::convolve_func_2d;
 use burn::Tensor;
 use burn::config::Config;
-use burn::prelude::{Backend, Bool, Int, ToElement, s, SliceArg};
+use burn::prelude::{Backend, Bool, Int, SliceArg, ToElement, s};
 use burn::tensor::{Distribution, Slice};
 
 /// Config for [`Conway`]

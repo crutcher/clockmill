@@ -281,7 +281,13 @@ impl<B: Backend> FlowVisApp<B> {
     pub fn solid_cells(&self) -> Vec<Vec<bool>> {
         let [height, width] = self.get_world_shape();
 
-        let cells = self.solid_mask.clone().to_data().into_vec::<u8>().unwrap();
+        let cells = self
+            .solid_mask
+            .clone()
+            .int()
+            .to_data()
+            .into_vec::<i32>()
+            .unwrap();
         let mut result = vec![vec![false; width]; height];
         for y in 0..height {
             for x in 0..width {

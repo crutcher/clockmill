@@ -3,7 +3,7 @@
 use crate::convolve::surface::convolve_func_2d;
 use burn::Tensor;
 use burn::config::Config;
-use burn::prelude::{Backend, Bool, Int, RangesArg, ToElement, s};
+use burn::prelude::{Backend, Bool, Int, ToElement, s, SliceArg};
 use burn::tensor::{Distribution, Slice};
 
 /// Config for [`Conway`]
@@ -98,7 +98,7 @@ impl<B: Backend> Conway<B> {
         ranges: R,
     ) -> Option<Vec<Vec<bool>>>
     where
-        R: RangesArg<2>,
+        R: SliceArg<2>,
     {
         self.previous
             .as_ref()
@@ -111,7 +111,7 @@ impl<B: Backend> Conway<B> {
         ranges: R,
     ) -> Vec<Vec<bool>>
     where
-        R: RangesArg<2>,
+        R: SliceArg<2>,
     {
         read_2d_slice(self.state.clone(), ranges)
     }
@@ -122,7 +122,7 @@ impl<B: Backend> Conway<B> {
         ranges: R,
         data: Vec<Vec<bool>>,
     ) where
-        R: RangesArg<2>,
+        R: SliceArg<2>,
     {
         let slices = ranges.into_slices(self.state.shape());
         let [h, w] = slices_shape(&slices);
@@ -159,7 +159,7 @@ fn read_2d_slice<B: Backend, R>(
     ranges: R,
 ) -> Vec<Vec<bool>>
 where
-    R: RangesArg<2>,
+    R: SliceArg<2>,
 {
     let slices = ranges.into_slices(state.shape());
     let [h, w] = slices_shape(&slices);
@@ -192,7 +192,7 @@ fn next_inner<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
             &[("c_in", 1), ("k", 3)],
         );
 
-        let blocks: Tensor<B, 5, Bool> = blocks.squeeze::<5>(3);
+        let blocks: Tensor<B, 5, Bool> = blocks.squeeze_dim::<5>(3);
         #[cfg(debug_assertions)]
         bimm_contracts::assert_shape_contract_periodically!(
             ["batch", "h_win", "w_win", "k", "k"],

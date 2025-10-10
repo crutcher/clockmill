@@ -95,21 +95,9 @@ fn run<B: Backend>(args: &Args) {
 
     let dtype = F32;
 
-    // Create a Glutin window.
-    let mut window: Window = WindowSettings::new(
-        "flowvis",
-        [
-            args.grid_shape[1] as f64 * args.zoom,
-            args.grid_shape[0] as f64 * args.zoom,
-        ],
-    )
-    .graphics_api(opengl)
-    .exit_on_esc(true)
-    .build()
-    .unwrap();
+    let [height, width] = args.grid_shape;
 
-    // Load the OpenGL function pointers
-    gl::load_with(|s| window.get_proc_address(s) as *const _);
+    let prism_shape = [height / 2, width / 2];
 
     let mut world_state: LBMD2Q9State<B> = LBMD2Q9Config::new(args.grid_shape)
         .with_relaxation(RelaxationParam::Tau(args.tau))
@@ -124,13 +112,23 @@ fn run<B: Backend>(args: &Args) {
         .slice_fill(s![30, 40..60], true)
         .slice_fill(s![125, 75..150], true)
         .slice_fill(s![150, 50..75], true)
-        .slice_fill(s![150, 100..125], true);
+        .slice_fill(s![150, 100..125], true)
+        .slice_fill(s![-10.., -10..], true);
 
     world_state.omega = world_state
         .omega
-        .slice_fill(s![-150..-50, -150..-50], 0.05)
         .slice_fill(
-            s![-125..-75, -125..-75],
+            s![
+                -((3 * prism_shape[0] / 2) as isize)..-((prism_shape[0] / 2) as isize),
+                -((3 * prism_shape[1] / 2) as isize)..-((prism_shape[1] / 2) as isize),
+            ],
+            0.01,
+        )
+        .slice_fill(
+            s![
+                -((5 * prism_shape[0] / 4) as isize)..-((3 * prism_shape[0] / 4) as isize),
+                -((5 * prism_shape[1] / 4) as isize)..-((3 * prism_shape[1] / 4) as isize),
+            ],
             RelaxationParam::Tau(args.tau).as_omega_value(),
         );
 
@@ -148,6 +146,18 @@ fn run<B: Backend>(args: &Args) {
         std::time::Duration::from_secs_f32(1.0 / args.tps),
     );
 
+    // Create a Glutin window.
+    let mut window: Window = WindowSettings::new(
+        "flowvis",
+        [width as f64 * args.zoom, height as f64 * args.zoom],
+    )
+    .graphics_api(opengl)
+    .exit_on_esc(true)
+    .build()
+    .unwrap();
+
+    // Load the OpenGL function pointers
+    gl::load_with(|s| window.get_proc_address(s) as *const _);
     // Create a new game and run it.
     let mut app = FlowVisApp {
         gl: GlGraphics::new(opengl),
@@ -313,12 +323,9 @@ impl<B: Backend> FlowVisApp<B> {
         let solid_cells = self.solid_cells();
 
         let [height, width] = self.get_world_shape();
-        let [view_width, view_height] = args.viewport().draw_size;
+        let [view_width, view_height] = args.viewport().window_size;
 
-        let [x_step, y_step] = [
-            (view_width as f64) / (width as f64),
-            (view_height as f64) / (height as f64),
-        ];
+        let [x_step, y_step] = [view_width / (width as f64), view_height / (height as f64)];
 
         self.gl.draw(args.viewport(), |c, gl| {
             for y in 0..height {

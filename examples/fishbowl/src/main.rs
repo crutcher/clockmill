@@ -2,6 +2,7 @@ use crate::sim::Simulation;
 use app::FishbowlApp;
 use burn::prelude::Backend;
 use clap::Parser;
+use clockmill::framework::config_parsers::parse_shape;
 use clockmill::simulations::surface::conway::{Conway, ConwayConfig};
 use color::ColorScheme;
 use glutin_window::GlutinWindow as Window;
@@ -15,25 +16,6 @@ use piston::{EventLoop, OpenGLWindow};
 mod app;
 mod color;
 mod sim;
-
-fn parse_shape(s: &str) -> Result<[usize; 2], String> {
-    if s.contains(",") {
-        let parts: Vec<&str> = s.split(',').collect();
-        if parts.len() != 2 {
-            return Err("Shape must be in the format WIDTH,HEIGHT".to_string());
-        }
-        let width = parts[0]
-            .parse::<usize>()
-            .map_err(|_| "Invalid width".to_string())?;
-        let height = parts[1]
-            .parse::<usize>()
-            .map_err(|_| "Invalid height".to_string())?;
-        Ok([width, height])
-    } else {
-        let size = s.parse::<usize>().map_err(|_| "Invalid size".to_string())?;
-        Ok([size, size])
-    }
-}
 
 /// Conway's Game of Life demo for Burn.
 #[derive(Parser, Debug)]

@@ -1,44 +1,23 @@
 use burn::Tensor;
-use burn::prelude::{Backend, Bool, ElementConversion, s};
+use burn::prelude::{Backend, Bool, s};
 use burn::tensor::DType::F32;
 use clap::Parser;
+use clockmill::framework::config_parsers::parse_shape;
 use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{
     RelaxationParam, density, direction_vectors, macroscopic_momentum,
 };
-use clockmill::simulations::surface::fluids::lbm::d2q9::world::{
-    LBMD2Q9Config, LBMD2Q9State, LBMMeta,
-};
+use clockmill::simulations::surface::fluids::lbm::d2q9::world::{LBMD2Q9Config, LBMD2Q9State};
 use glutin_window::GlutinWindow as Window;
 use opengl_graphics::{GlGraphics, OpenGL};
 use piston::event_loop::{EventSettings, Events};
 use piston::input::RenderEvent;
 use piston::window::WindowSettings;
 use piston::{EventLoop, OpenGLWindow, RenderArgs};
-use rand::Rng;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
-
-fn parse_shape(s: &str) -> Result<[usize; 2], String> {
-    if s.contains(",") {
-        let parts: Vec<&str> = s.split(',').collect();
-        if parts.len() != 2 {
-            return Err("Shape must be in the format WIDTH,HEIGHT".to_string());
-        }
-        let width = parts[0]
-            .parse::<usize>()
-            .map_err(|_| "Invalid width".to_string())?;
-        let height = parts[1]
-            .parse::<usize>()
-            .map_err(|_| "Invalid height".to_string())?;
-        Ok([width, height])
-    } else {
-        let size = s.parse::<usize>().map_err(|_| "Invalid size".to_string())?;
-        Ok([size, size])
-    }
-}
 
 /// Conway's Game of Life demo for Burn.
 #[derive(Parser, Debug)]
@@ -199,6 +178,7 @@ impl<B: Backend> Simulation<B> {
             let mut world = world;
 
             while !shutdown_clone.load(Ordering::Relaxed) {
+                /*
                 if false && world.step_count.is_multiple_of(250) {
                     let [width, height] = world.shape();
                     let mut dist = world.dist.clone();
@@ -219,6 +199,7 @@ impl<B: Backend> Simulation<B> {
 
                     world.dist = dist;
                 }
+                 */
 
                 // Export
                 world.advance_step();

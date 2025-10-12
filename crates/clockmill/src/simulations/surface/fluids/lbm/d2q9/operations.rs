@@ -445,6 +445,22 @@ pub fn combined_isotropic_collision<B: Backend>(
     with_spherical_reflection(pre_dist, naive_dist, solid_mask)
 }
 
+/// Fold a distribution into windows.
+///
+/// Note the geometry: ``[H-2, W-2, VY=3, VX=3, WIN_Y=3, WIN_X=3]``
+/// - ``(H, W)``: the spatial position of the "current" cell.
+/// - ``(WIN_Y, WIN_X)``: the current window; with the current cell in the center.
+/// - ``(VY, VX)``: the 3x3 distribution in each cell.
+///
+/// # Arguments
+/// - `dist`: a ``[H, W, VY=3, VX=3]`` distribution.
+///
+/// # Returns
+/// ``[H, W, VY=3, VX=3, WIN_Y=3, WIN_X=3]`` folded windows.
+pub fn dist_windows<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 6> {
+    dist.unfold::<5, _>(0, 3, 1).unfold::<6, _>(1, 3, 1)
+}
+
 /// Apply the streaming update step to the non-border cells of a population.
 ///
 /// # Arguments
@@ -462,13 +478,7 @@ pub fn stream_interior<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 4> {
         &[("VY", 3), ("VX", 3)]
     );
 
-    // Map the state into no-copy 3x3 neighborhood windows.
-    //
-    // Note the geometry: [H-2, W-2, VY=3, VX=3, WIN_Y=3, WIN_X=3]
-    // - (H, W) - the spatial position of the "current" cell.
-    // - (WIN_Y, WIN_X) - the current window; with the current cell in the center.
-    // - (VY, VX) - the 3x3 distribution in each cell.
-    let windows = dist.unfold::<5, _>(0, 3, 1).unfold::<6, _>(1, 3, 1);
+    let windows = dist_windows(dist);
 
     // Timing: crutcher, Oct 2025:
     // cat([cat([tensor,]),]) is ~10% faster than cat([tensor,]).reshape([..., 3, 3])

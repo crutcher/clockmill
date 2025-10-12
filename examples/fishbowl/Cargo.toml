@@ -24,4 +24,4 @@ workspace = true
 default = ["wgpu"]
 cuda = ["burn/cuda", "burn/cubecl"]
 metal = ["burn/metal"]
-wgpu = ["burn/wgpu"]
+wgpu = ["burn/wgpu", "burn/cubecl"]

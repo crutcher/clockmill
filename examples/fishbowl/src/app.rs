@@ -26,8 +26,8 @@ impl<B: Backend> FishbowlApp<B> {
         let [h, w] = state_data.shape().dims();
         let state_vec = state_data.int().to_data().to_vec::<i32>().unwrap();
 
-        let [win_w, win_h] = args.viewport().draw_size;
-        let draw_scale = [(win_w as f64) / (w as f64), (win_h as f64) / (h as f64)];
+        let [win_w, win_h] = args.viewport().window_size;
+        let draw_scale = [win_w / (w as f64), win_h / (h as f64)];
 
         // TODD: this should all be a one-step Image::draw().
 

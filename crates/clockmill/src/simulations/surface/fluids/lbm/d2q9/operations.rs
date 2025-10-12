@@ -22,6 +22,7 @@
 //! in the ``(-1, -1)`` direction.
 //!
 //! This direction is also available in the `direction_vectors()` interface.
+
 use crate::compat::FRAC_1_SQRT_3;
 use crate::compat::operations::fast_powi_2;
 use burn::Tensor;
@@ -515,6 +516,22 @@ pub fn stream_interior<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 4> {
     result
 }
 
+/// Select the ``(VY, VX)`` field.
+///
+/// # Arguments
+///
+/// - `windows`: a ``[H, W, VY=3, VX=3]`` distribution.
+///
+/// # Returns
+/// - a ``[H, W, 1, 1]`` field.
+pub fn select_ve_field<B: Backend>(
+    windows: Tensor<B, 4>,
+    vy: usize,
+    vx: usize,
+) -> Tensor<B, 4> {
+    windows.slice(s![.., .., vy, vx])
+}
+
 /// half-stream, y variant.
 ///
 /// # Arguments
@@ -600,7 +617,7 @@ mod tests {
     use super::*;
 
     use burn::Tensor;
-    use burn::backend::{Cuda, Wgpu};
+    use burn::backend::Wgpu;
     use burn::tensor::DType::F32;
     use burn::tensor::{Distribution, Tolerance};
 
@@ -675,7 +692,7 @@ mod tests {
 
     #[test]
     fn test_momentum_and_velocity() {
-        type B = Cuda;
+        type B = Wgpu;
         let device = Default::default();
 
         let dist: Tensor<B, 4> = Tensor::from_data(

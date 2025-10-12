@@ -23,7 +23,7 @@
 //!
 //! This direction is also available in the `direction_vectors()` interface.
 use crate::compat::FRAC_1_SQRT_3;
-use crate::compat::operations::{fast_powi_2, sum_dims};
+use crate::compat::operations::fast_powi_2;
 use burn::Tensor;
 use burn::prelude::{Backend, Bool, Int, s};
 use burn::serde::{Deserialize, Serialize};
@@ -47,7 +47,7 @@ pub const C4: f64 = C2 * C2;
 ///
 /// A ``[H, W]`` population density.
 pub fn density<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 2> {
-    sum_dims(dist, &[2, 3]).squeeze_dims::<2>(&[2, 3])
+    dist.sum_dims(&[2, 3]).squeeze_dims::<2>(&[2, 3])
 }
 
 /// D2Q9 Direction Indices
@@ -107,11 +107,10 @@ pub fn macroscopic_momentum<B: Backend>(
     dist: Tensor<B, 4>,
     e: Tensor<B, 3>,
 ) -> Tensor<B, 3> {
-    sum_dims(
-        dist.unsqueeze_dims::<5>(&[-1]).mul(e.unsqueeze::<5>()),
-        &[2, 3],
-    )
-    .squeeze_dims::<3>(&[2, 3])
+    dist.unsqueeze_dims::<5>(&[-1])
+        .mul(e.unsqueeze::<5>())
+        .sum_dims(&[2, 3])
+        .squeeze_dims::<3>(&[2, 3])
 }
 
 /// Computes directional velocity from macroscopic momentum.
@@ -597,7 +596,7 @@ mod tests {
 
     #[test]
     fn test_population_density() {
-        type B = Cuda;
+        type B = Wgpu;
         let device = Default::default();
 
         let dist: Tensor<B, 4> = Tensor::from_data(
@@ -624,7 +623,7 @@ mod tests {
 
     #[test]
     fn test_direction_vectors() {
-        type B = Cuda;
+        type B = Wgpu;
         let device = Default::default();
 
         let e: Tensor<B, 3> = direction_vectors(&device);
@@ -645,7 +644,7 @@ mod tests {
 
     #[test]
     fn test_weight_matrix() {
-        type B = Cuda;
+        type B = Wgpu;
         let device = Default::default();
 
         let w: Tensor<B, 2> = weight_matrix(&device);
@@ -719,7 +718,7 @@ mod tests {
 
     #[test]
     fn test_lattice_dot_velocity() {
-        type B = Cuda;
+        type B = Wgpu;
         let device = Default::default();
 
         let e: Tensor<B, 3> = direction_vectors(&device);
@@ -758,7 +757,7 @@ mod tests {
 
     #[test]
     fn test_equilibrium_invariants() {
-        type B = Cuda;
+        type B = Wgpu;
         let device = Default::default();
 
         let dtype = F32;
@@ -780,7 +779,7 @@ mod tests {
 
     #[test]
     fn test_collision_invariants() {
-        type B = Cuda;
+        type B = Wgpu;
         let device = Default::default();
 
         let dtype = F32;
@@ -825,7 +824,7 @@ mod tests {
     #[test]
     #[rustfmt::skip]
     fn test_equilibrium() {
-        type B = Cuda;
+        type B = Wgpu;
         let device = Default::default();
 
         let dist = Tensor::<B, 4>::random([20, 20, 3, 3], Distribution::Default, &device);

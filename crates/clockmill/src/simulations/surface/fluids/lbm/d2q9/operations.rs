@@ -25,8 +25,9 @@
 
 use crate::compat::FRAC_1_SQRT_3;
 use crate::compat::operations::fast_powi_2;
+use bimm_contracts::unpack_shape_contract;
 use burn::Tensor;
-use burn::prelude::{Backend, Bool, Int, s};
+use burn::prelude::{Backend, Bool, ElementConversion, Int, s};
 use burn::serde::{Deserialize, Serialize};
 
 /// The speed of sound.
@@ -653,6 +654,174 @@ pub fn stream_edge_crossflow<B: Backend>(source: Tensor<B, 2>) -> Tensor<B, 2> {
     Tensor::<B, 2>::zeros([z, 3], &device).cast(dtype)
 }
 
+/// Advance the world simulation by one step.
+pub fn _advance_step<B: Backend>(
+    dist: Tensor<B, 4>,
+    solid_mask: Tensor<B, 2, Bool>,
+    e: Tensor<B, 3>,
+    w: Tensor<B, 2>,
+    omega: Tensor<B, 2>,
+    correction_term: Option<f64>,
+) -> (Tensor<B, 4>, f64) {
+    let [height, width] = unpack_shape_contract!(
+        ["height", "width", "VY", "VX"],
+        &dist.shape().dims,
+        &["height", "width"],
+        &[("VY", 3), ("VX", 3)]
+    );
+
+    let device = dist.device();
+    let dtype = dist.dtype();
+
+    let solid_mask = solid_mask
+        .clone()
+        .slice_fill(s![0, ..], true)
+        .slice_fill(s![-1, ..], true)
+        .slice_fill(s![.., 0], true)
+        .slice_fill(s![.., -1], true);
+
+    // Local Updates:
+    // 1. Internal cell collisions.
+    let col_dist = bgk_collision(
+        dist.clone(),
+        e.clone(),
+        w.clone(),
+        omega.clone(),
+        correction_term,
+    );
+    let thermal_dist = with_spherical_reflection(dist.clone(), col_dist, solid_mask);
+
+    let energy_delta: f64 = -(thermal_dist.clone().slice(s![0, .., 0, ..]).sum()
+        + thermal_dist.clone().slice(s![-1, .., -1, ..]).sum()
+        + thermal_dist.clone().slice(s![.., 0, .., 0]).sum()
+        + thermal_dist.clone().slice(s![.., -1, .., -1]).sum())
+    .into_scalar()
+    .elem::<f64>();
+    println!("energy loss: {}", energy_delta);
+
+    let inner_stream = stream_interior_windows(thermal_dist.clone());
+
+    let horiz_inflow = Tensor::<B, 4>::zeros([1, width, 1, 3], &device).cast(dtype);
+    let vert_inflow = Tensor::<B, 4>::zeros([height - 2, 1, 3, 1], &device).cast(dtype);
+
+    let top = Tensor::cat(
+        vec![
+            // outflow
+            stream_partial_edge_flow(
+                thermal_dist
+                    .clone()
+                    .slice(s![1, .., 0, ..])
+                    .squeeze_dims::<2>(&[0, 2]),
+            )
+            .unsqueeze_dim::<3>(0)
+            .unsqueeze_dim::<4>(2),
+            // crossflow
+            stream_partial_edge_flow(
+                thermal_dist
+                    .clone()
+                    .slice(s![0, .., 0, ..])
+                    .squeeze_dims::<2>(&[0, 2]),
+            )
+            .unsqueeze_dim::<3>(0)
+            .unsqueeze_dim::<4>(2),
+            // inflow
+            horiz_inflow.clone(),
+        ],
+        2,
+    );
+    let middle = Tensor::cat(
+        vec![
+            Tensor::cat(
+                vec![
+                    // outflow
+                    stream_partial_edge_flow(
+                        thermal_dist
+                            .clone()
+                            .slice(s![.., 1, .., 0])
+                            .squeeze_dims::<2>(&[1, 3]),
+                    )
+                    .slice_dim(0, s![1..-1])
+                    .unsqueeze_dim::<3>(1)
+                    .unsqueeze_dim::<4>(3),
+                    // crossflow
+                    stream_partial_edge_flow(
+                        thermal_dist
+                            .clone()
+                            .slice(s![.., 0, .., 0])
+                            .squeeze_dims::<2>(&[1, 3]),
+                    )
+                    .slice_dim(0, s![1..-1])
+                    .unsqueeze_dim::<3>(1)
+                    .unsqueeze_dim::<4>(3),
+                    // inflow
+                    vert_inflow.clone(),
+                ],
+                3,
+            ),
+            inner_stream,
+            Tensor::cat(
+                vec![
+                    // inflow
+                    vert_inflow,
+                    // crossflow
+                    stream_partial_edge_flow(
+                        thermal_dist
+                            .clone()
+                            .slice(s![.., -1, .., 0])
+                            .squeeze_dims::<2>(&[1, 3]),
+                    )
+                    .slice_dim(0, s![1..-1])
+                    .unsqueeze_dim::<3>(1)
+                    .unsqueeze_dim::<4>(3),
+                    // outflow
+                    stream_partial_edge_flow(
+                        thermal_dist
+                            .clone()
+                            .slice(s![.., -2, .., 0])
+                            .squeeze_dims::<2>(&[1, 3]),
+                    )
+                    .slice_dim(0, s![1..-1])
+                    .unsqueeze_dim::<3>(1)
+                    .unsqueeze_dim::<4>(3),
+                ],
+                3,
+            ),
+        ],
+        1,
+    );
+    let bottom = Tensor::cat(
+        vec![
+            // inflow
+            horiz_inflow,
+            // crossflow
+            stream_partial_edge_flow(
+                thermal_dist
+                    .clone()
+                    .slice(s![1, .., 0, ..])
+                    .squeeze_dims::<2>(&[0, 2]),
+            )
+            .unsqueeze_dim::<3>(0)
+            .unsqueeze_dim::<4>(2),
+            // outflow
+            stream_partial_edge_flow(
+                thermal_dist
+                    .clone()
+                    .slice(s![-2, .., 0, ..])
+                    .squeeze_dims::<2>(&[0, 2]),
+            )
+            .unsqueeze_dim::<3>(0)
+            .unsqueeze_dim::<4>(2),
+        ],
+        2,
+    );
+
+    let streaming_dist = Tensor::cat(vec![top, middle, bottom], 0);
+
+    // TODO: better handle of numerical instability.
+    // let dist = dist.clone().mask_fill(dist.is_finite().bool_not(), 0.0);
+
+    (streaming_dist, energy_delta)
+}
 #[cfg(test)]
 mod tests {
     use super::*;

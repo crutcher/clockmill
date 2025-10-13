@@ -76,15 +76,13 @@ fn run<B: Backend>(args: &Args) {
 
     let [height, width] = args.grid_shape;
 
-    let prism_shape = [height / 2, width / 2];
-
     let mut world_state: LBMD2Q9State<B> = LBMD2Q9Config::new(args.grid_shape)
         .with_relaxation(RelaxationParam::Tau(args.tau))
         .init(&device);
     world_state.dist = world_state
         .dist
         .slice_fill(s![50, 20, 1, 1], 50.0)
-        .slice_fill(s![90, 100, 1, 1], 50.0);
+        .slice_fill(s![20, 100, 1, 1], 50.0);
 
     world_state.solid_mask = world_state
         .solid_mask
@@ -94,6 +92,8 @@ fn run<B: Backend>(args: &Args) {
         .slice_fill(s![150, 100..125], true)
         .slice_fill(s![-10.., -10..], true);
 
+    /*
+    let prism_shape = [height / 2, width / 2];
     world_state.omega = world_state
         .omega
         .slice_fill(
@@ -110,6 +110,8 @@ fn run<B: Backend>(args: &Args) {
             ],
             RelaxationParam::Tau(args.tau).as_omega_value(),
         );
+
+     */
 
     let mut world_state = world_state.to_dtype(dtype);
     world_state.save_correct_total_mass();

@@ -5,7 +5,7 @@ use burn::tensor::DType::{F16, F32};
 use burn::tensor::Distribution;
 use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{
     RelaxationParam, combined_isotropic_collision, direction_vectors, naive_bgk_collision,
-    stream_interior, weight_matrix, with_spherical_reflection,
+    stream_interior_windows, weight_matrix, with_spherical_reflection,
 };
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
@@ -57,7 +57,7 @@ fn bench_lbm_d2q9(c: &mut Criterion) {
 
         group.bench_function(format!("{:?} streaming", dtype).as_str(), |b| {
             b.iter(|| {
-                let stream_result = stream_interior(dist.clone());
+                let stream_result = stream_interior_windows(dist.clone());
 
                 black_box(stream_result);
             })
@@ -71,7 +71,7 @@ fn bench_lbm_d2q9(c: &mut Criterion) {
                     solid_mask.clone(),
                 );
 
-                let stream_result = stream_interior(dist.clone());
+                let stream_result = stream_interior_windows(dist.clone());
                 let dist = dist.slice_assign(s![1..-1, 1..-1], stream_result);
 
                 black_box(dist.mean().into_scalar());

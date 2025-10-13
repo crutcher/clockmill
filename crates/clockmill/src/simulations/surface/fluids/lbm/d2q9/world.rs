@@ -2,7 +2,7 @@
 
 use crate::simulations::surface::fluids::lbm::d2q9::operations::{
     RelaxationParam, bgk_collision, direction_vectors, half_stream_x, half_stream_y,
-    stream_interior, weight_matrix, with_spherical_reflection,
+    stream_interior_windows, weight_matrix, with_spherical_reflection,
 };
 use burn::Tensor;
 use burn::config::Config;
@@ -260,7 +260,7 @@ impl<B: Backend> LBMD2Q9State<B> {
                 Tensor::cat(
                     vec![
                         self.stream_left_edge(thermal_dist.clone()),
-                        stream_interior(thermal_dist.clone()),
+                        stream_interior_windows(thermal_dist.clone()),
                         self.stream_right_edge(thermal_dist.clone()),
                     ],
                     1,

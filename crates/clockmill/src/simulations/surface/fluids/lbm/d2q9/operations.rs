@@ -470,7 +470,7 @@ pub fn dist_windows<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 6> {
 ///
 /// # Returns
 /// - The updated ``[H[1:-1], W[1:-1], VY=3, VX=3]`` interior.
-pub fn stream_interior<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 4> {
+pub fn stream_interior_windows<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 4> {
     #[cfg(debug_assertions)]
     let [h, w] = bimm_contracts::unpack_shape_contract!(
         ["H", "W", "VY", "VX"],
@@ -610,6 +610,47 @@ pub fn half_stream_x<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 4> {
     );
 
     result
+}
+
+/// Stream the edge flow values.
+///
+/// This is an inner utility flow function. It assumes that the first
+/// and last spatial cells (``Z``) are perpendicular edges. Values
+/// which flow "out" of the boundary (from the perpendicular edges)
+/// are "lost".
+///
+/// This can be used on both the outflow values from the penultimate
+/// inner rows; and the crossflow values from the cell perpendicular
+/// flows.
+///
+/// # Arguments
+///
+/// - `source`: a ``[Z, V=3]`` source.
+///
+/// # Returns
+/// - a ``[Z, V=3]`` outflow.
+pub fn stream_partial_edge_flow<B: Backend>(source: Tensor<B, 2>) -> Tensor<B, 2> {
+    let z = source.shape().dims[0];
+    let device = source.device();
+    let dtype = source.dtype();
+
+    Tensor::<B, 2>::zeros([z, 3], &device)
+        .cast(dtype)
+        // v- flow
+        .slice_assign(s![..-1, 0], source.clone().slice(s![1.., 0]))
+        // v0 flow
+        .slice_assign(s![.., 1], source.clone().slice(s![.., 1]))
+        // v+ flow
+        .slice_assign(s![1.., 2], source.clone().slice(s![..-1, 2]))
+}
+
+/// todo.
+pub fn stream_edge_crossflow<B: Backend>(source: Tensor<B, 2>) -> Tensor<B, 2> {
+    let z = source.shape().dims[0];
+    let device = source.device();
+    let dtype = source.dtype();
+
+    Tensor::<B, 2>::zeros([z, 3], &device).cast(dtype)
 }
 
 #[cfg(test)]
@@ -881,7 +922,7 @@ mod tests {
 
     #[test]
     #[rustfmt::skip]
-    fn test_interior_streaming_updates() {
+    fn test_stream_interior_windows() {
         type B = Wgpu;
         let device = Default::default();
 
@@ -939,7 +980,7 @@ mod tests {
             ],
         ], &device);
 
-        let result = stream_interior(state.clone());
+        let result = stream_interior_windows(state.clone());
 
         assert_eq!(result.shape().dims, vec![1, 1, 3, 3]);
 
@@ -950,5 +991,22 @@ mod tests {
         ]]], &device);
 
         result.to_data().assert_eq(&expected.to_data(), false);
+    }
+
+    #[test]
+    fn test_stream_partial_edge_flow() {
+        type B = Wgpu;
+        let device = Default::default();
+
+        let source: Tensor<B, 2> =
+            Tensor::from_data([[1., 2., 3.], [4., 5., 6.], [7., 8., 9.]], &device);
+
+        let result = stream_partial_edge_flow(source);
+
+        result.to_data().assert_eq(
+            &Tensor::<B, 2>::from_data([[4., 2., 0.], [7., 5., 3.], [0., 8., 6.]], &device)
+                .to_data(),
+            false,
+        );
     }
 }

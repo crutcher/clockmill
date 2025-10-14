@@ -1183,7 +1183,7 @@ mod tests {
         let expected_eq = (w.unsqueeze() * rho.unsqueeze_dim(2)).mul(
             1
                 + 3.0 * e_dot_u.clone()
-                + 4.5 * e_dot_u.clone().powi_scalar(2)
+                + 4.5 * fast_powi_2(e_dot_u.clone())
                 - 1.5 * u_sq.unsqueeze_dims::<4>(&[2, 3])
         );
 

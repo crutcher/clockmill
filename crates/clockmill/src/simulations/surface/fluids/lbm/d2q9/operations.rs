@@ -29,6 +29,8 @@ use bimm_contracts::unpack_shape_contract;
 use burn::Tensor;
 use burn::prelude::{Backend, Bool, ElementConversion, Int, s};
 use burn::serde::{Deserialize, Serialize};
+use burn::tensor::DType;
+use burn::tensor::DType::F32;
 
 /// The speed of sound.
 pub const SPEED_OF_SOUND: f64 = FRAC_1_SQRT_3;
@@ -39,6 +41,59 @@ pub const C2: f64 = SPEED_OF_SOUND * SPEED_OF_SOUND;
 /// The speed of sound cubed.
 pub const C4: f64 = C2 * C2;
 
+/// Print a distribution.
+///
+/// Doesn't work well on big distributions.
+///
+/// # Arguments
+///
+/// - `label`: the label to use.
+/// - `dist`: the dist to print.
+pub fn dbg_dist<B: Backend>(
+    label: &str,
+    dist: Tensor<B, 4>,
+) {
+    let [height, width] = unpack_shape_contract!(
+        ["h", "w", "vy", "vx"],
+        &dist.shape().dims,
+        &["h", "w"],
+        &[("vy", 3), ("vx", 3)]
+    );
+
+    let total_energy: f32 = dist.clone().sum().into_scalar().elem();
+    println!("{label}: {total_energy:<8.2e}");
+
+    let data = dist.cast(F32).to_data().to_vec::<f32>().unwrap();
+
+    fn cross_bar_line(width: usize) {
+        print!("+");
+        for _ in 0..width {
+            for _ in 0..3 {
+                print!(" --------");
+            }
+            print!(" +");
+        }
+        println!();
+    }
+
+    cross_bar_line(width);
+
+    for h in 0..height {
+        for vy in 0..3 {
+            print!("|");
+            for w in 0..width {
+                for vx in 0..3 {
+                    let v = data[(h * width * 3 * 3) + (w * 3 * 3) + (vy * 3) + vx];
+                    print!(" {:>8.2e}", v);
+                }
+                print!(" |");
+            }
+            println!();
+        }
+
+        cross_bar_line(width);
+    }
+}
 /// Population Density
 ///
 /// # Arguments
@@ -255,6 +310,44 @@ pub fn equilibrium<B: Backend>(
     ))
 }
 
+/// Omegas for the BGK collision operator.
+pub enum OmegaSource<B: Backend> {
+    /// Scalar relaxation frequency.
+    Relaxation(RelaxationParam),
+
+    /// Tensor relaxation frequency.
+    Omega(Tensor<B, 2>),
+}
+
+impl<B: Backend> OmegaSource<B> {
+    /// Get the omega tensor.
+    pub fn omega(
+        &self,
+        device: &B::Device,
+        dtype: DType,
+    ) -> Tensor<B, 2> {
+        match self {
+            OmegaSource::Relaxation(relaxation) => {
+                Tensor::<B, 1>::from_data_dtype([relaxation.as_omega_value()], device, dtype)
+                    .unsqueeze()
+            }
+            OmegaSource::Omega(omega) => omega.clone().to_device(device).cast(dtype),
+        }
+    }
+}
+
+impl<B: Backend> From<RelaxationParam> for OmegaSource<B> {
+    fn from(val: RelaxationParam) -> Self {
+        OmegaSource::Relaxation(val)
+    }
+}
+
+impl<B: Backend> From<Tensor<B, 2>> for OmegaSource<B> {
+    fn from(val: Tensor<B, 2>) -> Self {
+        OmegaSource::Omega(val)
+    }
+}
+
 /// Wrapper for the BGK collision operator.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum RelaxationParam {
@@ -297,7 +390,7 @@ impl RelaxationParam {
     }
 }
 
-/// The relaxation operator for [`naive_bgk_collision`].
+/// The relaxation operator for [`bgk_collision`].
 ///
 /// Computes ``correction * (dist_a * (1 - omega) + dist_b * omega)``.
 ///
@@ -351,36 +444,23 @@ pub fn relaxed_sum<B: Backend>(
 ///   defaults to 1.0.
 ///
 /// # Returns
-/// - `[H, W, Y=3, VX=3]` post-collision distribution
-#[allow(unused)]
-pub fn naive_bgk_collision<B: Backend>(
+/// - `[H, W, VY=3, VX=3]` post-collision distribution
+pub fn bgk_collision<B: Backend, S: Into<OmegaSource<B>>>(
     dist: Tensor<B, 4>,
     e: Tensor<B, 3>,
     w: Tensor<B, 2>,
-    relaxation: RelaxationParam,
+    relaxation: S,
     correction: Option<f64>,
 ) -> Tensor<B, 4> {
-    let omega =
-        Tensor::<B, 1>::from_data([relaxation.as_omega_value()], &dist.device()).reshape([1, 1]);
-    bgk_collision(dist, e, w, omega, correction)
-}
+    let omega = relaxation.into().omega(&dist.device(), dist.dtype());
 
-/// Collision with spatial relaxation.
-#[allow(unused)]
-pub fn bgk_collision<B: Backend>(
-    dist: Tensor<B, 4>,
-    e: Tensor<B, 3>,
-    w: Tensor<B, 2>,
-    omega: Tensor<B, 2>,
-    correction: Option<f64>,
-) -> Tensor<B, 4> {
     let (source_rho, u) = moments(dist.clone(), e.clone());
     let eq_dist = equilibrium(source_rho.clone(), u, e, w);
 
-    let omega = omega.unsqueeze_dims::<4>(&[2, 3]);
+    let omega2 = omega.unsqueeze_dims::<4>(&[2, 3]);
 
-    let correction = correction.unwrap_or(1.0);
-    dist * (correction * (1.0 - omega.clone())) + eq_dist * (correction * omega)
+    let correction2 = correction.unwrap_or(1.0);
+    dist * (correction2 * (1.0 - omega2.clone())) + eq_dist * (correction2 * omega2)
 }
 
 /// Computes spherical solid reflection updates.
@@ -396,7 +476,7 @@ pub fn spherical_reflection<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 4> {
     dist.flip([2, 3])
 }
 
-/// Applies isotropic spherical solid reflection updates to [`naive_bgk_collision`].
+/// Applies isotropic spherical solid reflection updates to [`bgk_collision`].
 ///
 /// This models every solid point as a sphere, normal to all directions.
 ///
@@ -443,7 +523,7 @@ pub fn combined_isotropic_collision<B: Backend>(
 ) -> Tensor<B, 4> {
     let pre_dist = dist;
 
-    let naive_dist = naive_bgk_collision(pre_dist.clone(), e, w, relaxation, correction);
+    let naive_dist = bgk_collision(pre_dist.clone(), e, w, relaxation, correction);
     with_spherical_reflection(pre_dist, naive_dist, solid_mask)
 }
 
@@ -1129,7 +1209,7 @@ mod tests {
             .cast(dtype);
         let rho = density(dist.clone());
 
-        let col_dist = naive_bgk_collision(
+        let col_dist = bgk_collision(
             dist.clone(),
             e.clone(),
             w.clone(),
@@ -1144,7 +1224,7 @@ mod tests {
 
         // With Correction
         {
-            let col_dist = naive_bgk_collision(
+            let col_dist = bgk_collision(
                 dist.clone(),
                 e.clone(),
                 w.clone(),
@@ -1280,52 +1360,6 @@ mod tests {
         );
     }
 
-    fn print_dist<B: Backend>(
-        name: &str,
-        dist: Tensor<B, 4>,
-    ) {
-        let [height, width] = unpack_shape_contract!(
-            ["h", "w", "vy", "vx"],
-            &dist.shape().dims,
-            &["h", "w"],
-            &[("vy", 3), ("vx", 3)]
-        );
-
-        let total_energy: f32 = dist.clone().sum().into_scalar().elem();
-        println!("{name}: {total_energy:<8.2e}");
-
-        let data = dist.cast(F32).to_data().to_vec::<f32>().unwrap();
-
-        fn cross_bar_line(width: usize) {
-            print!("+");
-            for _ in 0..width {
-                for _ in 0..3 {
-                    print!(" --------");
-                }
-                print!(" +");
-            }
-            println!();
-        }
-
-        cross_bar_line(width);
-
-        for h in 0..height {
-            for vy in 0..3 {
-                print!("|");
-                for w in 0..width {
-                    for vx in 0..3 {
-                        let v = data[(h * width * 3 * 3) + (w * 3 * 3) + (vy * 3) + vx];
-                        print!(" {:>8.2e}", v);
-                    }
-                    print!(" |");
-                }
-                println!();
-            }
-
-            cross_bar_line(width);
-        }
-    }
-
     #[test]
     fn test_debug_flow_loss() {
         type B = Wgpu;
@@ -1348,14 +1382,14 @@ mod tests {
             .slice_fill(s![1, 1, 1, 1], 3.0)
             .slice_fill(s![1, -2, 1, 1], 5.0)
             .slice_fill(s![-2, -2, 1, 1], 10.0);
-        print_dist("dist_t0", dist_t0.clone());
+        dbg_dist("dist_t0", dist_t0.clone());
 
         let mut current = dist_t0.clone();
 
         let k = 100;
         for t_idx in 1..=k {
             let stream_phase = outflow_clipping_stream(current);
-            print_dist(
+            dbg_dist(
                 format!("stream {t_idx}").to_string().as_str(),
                 stream_phase.clone(),
             );
@@ -1368,7 +1402,7 @@ mod tests {
                 RelaxationParam::Tau(1.0),
                 None,
             );
-            print_dist(
+            dbg_dist(
                 format!("thermal {t_idx}").to_string().as_str(),
                 thermal_phase.clone(),
             );

@@ -51,12 +51,12 @@ impl LBMD2Q9Config {
     pub fn init<B: Backend>(
         self,
         device: &B::Device,
+        rho: f64,
     ) -> LBMD2Q9State<B> {
         let [height, width] = self.shape;
 
         let solid_mask = Tensor::<B, 2>::zeros([height, width], device).bool();
 
-        let initial_rho = 1.0;
         let e = direction_vectors(device);
         let w = weight_matrix(device);
 
@@ -66,7 +66,7 @@ impl LBMD2Q9Config {
             w.clone()
                 .unsqueeze::<4>()
                 .expand([height - 2, width - 2, 3, 3])
-                * initial_rho,
+                * rho,
         );
         let total_mass = state.clone().sum().into_scalar().elem();
 

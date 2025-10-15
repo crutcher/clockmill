@@ -4,7 +4,7 @@ use burn::tensor::DType::F32;
 use clap::Parser;
 use clockmill::framework::config_parsers::parse_shape;
 use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{
-    RelaxationParam, density, direction_vectors, macroscopic_momentum,
+    RelaxationParam, SPEED_OF_SOUND, density, direction_vectors, macroscopic_momentum,
 };
 use clockmill::simulations::surface::fluids::lbm::d2q9::world::{
     LBMD2Q9Config, LBMD2Q9State, LBMMeta,
@@ -79,13 +79,15 @@ fn run<B: Backend>(args: &Args) {
 
     let [height, width] = args.grid_shape;
 
+    let background_density = SPEED_OF_SOUND / 100.0;
+
     let mut world_state: LBMD2Q9State<B> = LBMD2Q9Config::new(args.grid_shape)
         .with_relaxation(RelaxationParam::Tau(args.tau))
-        .init(&device);
+        .init(&device, background_density);
     world_state.dist = world_state
         .dist
-        .slice_fill(s![50, 20, 1, 1], 50.0)
-        .slice_fill(s![20, 100, 1, 1], 50.0);
+        .slice_fill(s![50, 20, 1, 1], 5.0 * background_density)
+        .slice_fill(s![20, 100, 1, 1], 5.0 * background_density);
 
     world_state.solid_mask = world_state
         .solid_mask
@@ -94,6 +96,7 @@ fn run<B: Backend>(args: &Args) {
         .slice_fill(s![150, 50..75], true)
         .slice_fill(s![150, 100..125], true);
 
+    /*
     let prism_shape = [height / 2, width / 2];
     world_state.omega = world_state
         .omega
@@ -111,6 +114,7 @@ fn run<B: Backend>(args: &Args) {
             ],
             RelaxationParam::Tau(args.tau).as_omega_value(),
         );
+     */
 
     let mut world_state = world_state.to_dtype(dtype);
     world_state.save_correct_total_mass();
@@ -278,7 +282,7 @@ impl<B: Backend> FlowVisApp<B> {
         let cells = macroscopic_momentum(state.clone(), e.clone());
 
         // let scale = cells.clone().max().into_scalar();
-        let scale = 0.05;
+        let scale = SPEED_OF_SOUND / 1000.0;
 
         let cells = ((cells / scale) + 1.0) / 2.0;
         // let cells = cells.mul_scalar(std::f64::consts::PI / 2.0).sin();

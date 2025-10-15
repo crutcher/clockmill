@@ -2,8 +2,8 @@
 //! # LBM D2Q9 World Module
 
 use crate::simulations::surface::fluids::lbm::d2q9::operations::{
-    RelaxationParam, bgk_collision, combined_stream, direction_vectors, half_stream_x,
-    half_stream_y, weight_matrix, with_spherical_reflection,
+    RelaxationParam, bgk_collision, direction_vectors, half_stream_x, half_stream_y,
+    outflow_clipping_stream, weight_matrix, with_spherical_reflection,
 };
 use burn::Tensor;
 use burn::config::Config;
@@ -229,23 +229,24 @@ impl<B: Backend> LBMD2Q9State<B> {
             .slice_fill(s![.., 0], true)
             .slice_fill(s![.., -1], true);
 
-        // Local Updates:
-        // 1. Internal cell collisions.
-        let col_dist = bgk_collision(
-            dist.clone(),
-            self.e.clone(),
-            self.w.clone(),
-            self.omega.clone(),
-            None, // Some(self.correction_term()),
-        );
-        let thermal_dist = with_spherical_reflection(dist.clone(), col_dist, solid_mask);
+        let stream_phase = outflow_clipping_stream(dist);
 
-        let streaming_dist = combined_stream(thermal_dist);
+        let thermal_phase = with_spherical_reflection(
+            stream_phase.clone(),
+            bgk_collision(
+                stream_phase.clone(),
+                self.e.clone(),
+                self.w.clone(),
+                self.omega.clone(),
+                None, // Some(self.correction_term()),
+            ),
+            solid_mask,
+        );
 
         // TODO: better handle of numerical instability.
         // let dist = dist.clone().mask_fill(dist.is_finite().bool_not(), 0.0);
 
-        self.dist = streaming_dist;
+        self.dist = thermal_phase;
         self.step_count += 1;
     }
 

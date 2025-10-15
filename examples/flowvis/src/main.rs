@@ -1,18 +1,21 @@
 use burn::Tensor;
-use burn::prelude::{Backend, Bool, s};
+use burn::prelude::{Backend, Bool, ElementConversion, s};
 use burn::tensor::DType::F32;
 use clap::Parser;
 use clockmill::framework::config_parsers::parse_shape;
 use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{
-    RelaxationParam, direction_vectors, macroscopic_momentum,
+    RelaxationParam, density, direction_vectors, macroscopic_momentum,
 };
-use clockmill::simulations::surface::fluids::lbm::d2q9::world::{LBMD2Q9Config, LBMD2Q9State};
+use clockmill::simulations::surface::fluids::lbm::d2q9::world::{
+    LBMD2Q9Config, LBMD2Q9State, LBMMeta,
+};
 use glutin_window::GlutinWindow as Window;
 use opengl_graphics::{GlGraphics, OpenGL};
 use piston::event_loop::{EventSettings, Events};
 use piston::input::RenderEvent;
 use piston::window::WindowSettings;
 use piston::{EventLoop, OpenGLWindow, RenderArgs};
+use rand::Rng;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -28,11 +31,11 @@ pub struct Args {
     pub grid_shape: [usize; 2],
 
     /// The max frames per second.
-    #[arg(long, default_value_t = 40)]
+    #[arg(long, default_value_t = 60)]
     pub fps: u64,
 
     /// The tics per second.
-    #[arg(long, default_value_t = 40.)]
+    #[arg(long, default_value_t = 150.)]
     pub tps: f32,
 
     /// The initial window zoom.
@@ -40,7 +43,7 @@ pub struct Args {
     pub zoom: f64,
 
     /// The display opacity of updates.
-    #[arg(long, default_value_t = 0.5)]
+    #[arg(long, default_value_t = 1.0)]
     pub opacity: f32,
 
     /// The number of steps to skip on init.
@@ -89,9 +92,9 @@ fn run<B: Backend>(args: &Args) {
         .slice_fill(s![30, 40..60], true)
         .slice_fill(s![125, 75..150], true)
         .slice_fill(s![150, 50..75], true)
-        .slice_fill(s![150, 100..125], true)
-        .slice_fill(s![-10.., -10..], true);
+        .slice_fill(s![150, 100..125], true);
 
+    /*
     let prism_shape = [height / 2, width / 2];
     world_state.omega = world_state
         .omega
@@ -109,6 +112,7 @@ fn run<B: Backend>(args: &Args) {
             ],
             RelaxationParam::Tau(args.tau).as_omega_value(),
         );
+     */
 
     let mut world_state = world_state.to_dtype(dtype);
     world_state.save_correct_total_mass();
@@ -169,6 +173,7 @@ impl<B: Backend> Simulation<B> {
     ) -> Self {
         let shutdown = Arc::new(AtomicBool::new(false));
         let state = Arc::new(Mutex::new(world.dist.clone()));
+        let [height, width] = world.shape();
 
         let shutdown_clone = shutdown.clone();
         let state_clone = state.clone();
@@ -176,29 +181,54 @@ impl<B: Backend> Simulation<B> {
         let handle = thread::spawn(move || {
             let mut world = world;
 
+            let mut stash = 0.0;
+
             while !shutdown_clone.load(Ordering::Relaxed) {
-                /*
-                if false && world.step_count.is_multiple_of(250) {
-                    let [width, height] = world.shape();
-                    let mut dist = world.dist.clone();
+                let dist = world.dist.clone();
 
-                    let extra: f64 = dist.clone().max().into_scalar().elem();
+                let drift = width / 4;
+                let period = 400.0;
 
-                    let k = rand::rng().random_range(2..=4);
-                    for _ in 0..k {
-                        let ry = rand::rng().random_range(1..=height - 1);
-                        let rx = rand::rng().random_range(1..=width - 1);
+                let offset = ((world.step_count as f32 * std::f32::consts::PI / period).sin()
+                    * drift as f32) as isize;
 
-                        let existing: f64 =
-                            dist.clone().slice(s![ry, rx, 1, 1]).into_scalar().elem();
-                        dist = dist.slice_fill(s![ry, rx, 1, 1], existing + extra);
+                let start = offset + (width as isize / 2);
 
-                        world.correct_total_mass += extra;
-                    }
+                let r = 0.2;
+                let outflow_slice = s![-1, start..start + 10, 0, ..];
+                let outflow = dist.clone().slice(outflow_slice);
 
-                    world.dist = dist;
+                stash += r * outflow.clone().sum().into_scalar().elem::<f32>();
+
+                let mut dist = dist
+                    .clone()
+                    .slice_assign(outflow_slice, (1.0 - r) * outflow.clone());
+
+                if world.step_count.is_multiple_of(60) {
+                    let (ry, rx) = loop {
+                        let ry = rand::rng().random_range(10..height - 10);
+                        let rx = rand::rng().random_range(10..width - 10);
+
+                        if world
+                            .solid_mask
+                            .clone()
+                            .slice(s![ry, rx])
+                            .into_scalar()
+                            .elem::<bool>()
+                        {
+                            continue;
+                        }
+
+                        break (ry, rx);
+                    };
+
+                    let existing: f32 = dist.clone().slice(s![ry, rx, 1, 1]).into_scalar().elem();
+
+                    dist = dist.slice_fill(s![ry, rx, 1, 1], existing + stash);
+                    stash = 0.0;
                 }
-                 */
+
+                world.dist = dist;
 
                 // Export
                 world.advance_step();
@@ -249,8 +279,10 @@ impl<B: Backend> FlowVisApp<B> {
         // let cells = fast_powi_2(u);
         let cells = macroscopic_momentum(state.clone(), e.clone());
 
-        let max_cell = cells.clone().max().into_scalar();
-        let cells = ((cells / max_cell) + 1.0) / 2.0;
+        // let scale = cells.clone().max().into_scalar();
+        let scale = 0.05;
+
+        let cells = ((cells / scale) + 1.0) / 2.0;
         // let cells = cells.mul_scalar(std::f64::consts::PI / 2.0).sin();
 
         let cells = cells.cast(F32).to_data().into_vec::<f32>().unwrap();
@@ -293,13 +325,11 @@ impl<B: Backend> FlowVisApp<B> {
     ) {
         use graphics::*;
 
-        /*
         let rho = density(self.get_state());
         let rho = rho.powi_scalar(2.0);
         let max_rho = rho.clone().max().into_scalar();
         let rho = rho.div_scalar(max_rho);
         let rho = rho.cast(F32).to_data().into_vec::<f32>().unwrap();
-         */
 
         let vis_cells = self.vis_cells();
         let solid_cells = self.solid_cells();
@@ -315,7 +345,7 @@ impl<B: Backend> FlowVisApp<B> {
                     let (uy, ux) = vis_cells[y][x];
                     let is_solid = solid_cells[y][x];
 
-                    // let d = rho[y * width + x];
+                    let _d = rho[y * width + x];
 
                     let color = if is_solid {
                         [1., 1., 1., 1.]

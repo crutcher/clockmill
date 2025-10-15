@@ -823,8 +823,20 @@ pub fn _advance_step<B: Backend>(
     (streaming_dist, energy_delta)
 }
 
-/// todo.
-pub fn combined_stream<B: Backend>(thermal_dist: Tensor<B, 4>) -> Tensor<B, 4> {
+/// Apply the streaming update step to a population.
+///
+/// This combines [`stream_interior_windows`] with edge outflow-streaming.
+///
+/// All edge outflow is clipped to the boundary. Closed universe sims should
+/// have zero edge outflow before calling this operation.
+///
+/// # Arguments
+///
+/// - `dist`: a ``[H, W, VY=3, VX=3]`` population distribution.
+///
+/// # Returns
+/// - The updated ``[H, W, VY=3, VX=3]`` distribution.
+pub fn outflow_clipping_stream<B: Backend>(thermal_dist: Tensor<B, 4>) -> Tensor<B, 4> {
     let mut streaming_dist = thermal_dist.zeros_like();
     streaming_dist = streaming_dist.slice_assign(
         s![1..-1, 1..-1],
@@ -1342,8 +1354,14 @@ mod tests {
 
         let k = 100;
         for t_idx in 1..=k {
+            let stream_phase = outflow_clipping_stream(current);
+            print_dist(
+                format!("stream {t_idx}").to_string().as_str(),
+                stream_phase.clone(),
+            );
+
             let thermal_phase = combined_isotropic_collision(
-                current.clone(),
+                stream_phase,
                 e.clone(),
                 w.clone(),
                 solid_mask.clone(),
@@ -1355,13 +1373,7 @@ mod tests {
                 thermal_phase.clone(),
             );
 
-            let stream_phase = combined_stream(thermal_phase.clone());
-            print_dist(
-                format!("stream {t_idx}").to_string().as_str(),
-                stream_phase.clone(),
-            );
-
-            current = stream_phase;
+            current = thermal_phase;
         }
     }
 }

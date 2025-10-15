@@ -62,8 +62,11 @@ impl LBMD2Q9Config {
 
         // Start off in a relaxed state.
         let state = Tensor::<B, 4>::empty([height, width, 3, 3], device).slice_assign(
-            s![.., ..],
-            w.clone().unsqueeze::<4>().expand([height, width, 3, 3]) * initial_rho,
+            s![1..-1, 1..-1],
+            w.clone()
+                .unsqueeze::<4>()
+                .expand([height - 2, width - 2, 3, 3])
+                * initial_rho,
         );
         let total_mass = state.clone().sum().into_scalar().elem();
 
@@ -243,14 +246,10 @@ impl<B: Backend> LBMD2Q9State<B> {
             stream_interior_windows(thermal_dist.clone()),
         );
 
-        streaming_dist = streaming_dist.slice_assign(
-            s![0, .., 1, 1],
-            thermal_dist.clone().slice(s![0, .., 1, 1]),
-        );
-        streaming_dist = streaming_dist.slice_assign(
-            s![.., 0, 1, 1],
-            thermal_dist.clone().slice(s![.., 0, 1, 1]),
-        );
+        streaming_dist = streaming_dist
+            .slice_assign(s![0, .., 1, 1], thermal_dist.clone().slice(s![0, .., 1, 1]));
+        streaming_dist = streaming_dist
+            .slice_assign(s![.., 0, 1, 1], thermal_dist.clone().slice(s![.., 0, 1, 1]));
         streaming_dist = streaming_dist.slice_assign(
             s![-1, .., 1, 1],
             thermal_dist.clone().slice(s![-1, .., 1, 1]),
@@ -267,10 +266,8 @@ impl<B: Backend> LBMD2Q9State<B> {
             thermal_dist.clone().slice(s![1, 1.., 0, 0]),
         );
         // e[-1, 0]; v[0, 1]
-        streaming_dist = streaming_dist.slice_assign(
-            s![0, .., 0, 1],
-            thermal_dist.clone().slice(s![1, .., 0, 1]),
-        );
+        streaming_dist = streaming_dist
+            .slice_assign(s![0, .., 0, 1], thermal_dist.clone().slice(s![1, .., 0, 1]));
         // e[-1, 1]; v[0, 2]
         streaming_dist = streaming_dist.slice_assign(
             s![0, 1.., 0, 2],
@@ -301,10 +298,8 @@ impl<B: Backend> LBMD2Q9State<B> {
             thermal_dist.clone().slice(s![1.., 1, 0, 0]),
         );
         // e[0, -1]; v[1, 0]
-        streaming_dist = streaming_dist.slice_assign(
-            s![.., 0, 1, 0],
-            thermal_dist.clone().slice(s![.., 1, 1, 0]),
-        );
+        streaming_dist = streaming_dist
+            .slice_assign(s![.., 0, 1, 0], thermal_dist.clone().slice(s![.., 1, 1, 0]));
         // e[1, -1]; v[2, 0]
         streaming_dist = streaming_dist.slice_assign(
             s![1.., 0, 2, 0],

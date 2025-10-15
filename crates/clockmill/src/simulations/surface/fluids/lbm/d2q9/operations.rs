@@ -1178,4 +1178,186 @@ mod tests {
             false,
         );
     }
+
+    fn print_dist<B: Backend>(
+        name: &str,
+        dist: Tensor<B, 4>,
+    ) {
+        let [height, width] = unpack_shape_contract!(
+            ["h", "w", "vy", "vx"],
+            &dist.shape().dims,
+            &["h", "w"],
+            &[("vy", 3), ("vx", 3)]
+        );
+
+        let total_energy: f32 = dist.clone().sum().into_scalar().elem();
+        println!("{name}: {total_energy:<8.2e}");
+
+        let data = dist.cast(F32).to_data().to_vec::<f32>().unwrap();
+
+        fn cross_bar_line(width: usize) {
+            print!("+");
+            for _ in 0..width {
+                for _ in 0..3 {
+                    print!(" --------");
+                }
+                print!(" +");
+            }
+            println!();
+        }
+
+        cross_bar_line(width);
+
+        for h in 0..height {
+            for vy in 0..3 {
+                print!("|");
+                for w in 0..width {
+                    for vx in 0..3 {
+                        let v = data[(h * width * 3 * 3) + (w * 3 * 3) + (vy * 3) + vx];
+                        print!(" {:>8.2e}", v);
+                    }
+                    print!(" |");
+                }
+                println!();
+            }
+
+            cross_bar_line(width);
+        }
+    }
+
+    fn combined_stream<B: Backend>(thermal_dist: Tensor<B, 4>) -> Tensor<B, 4> {
+        let mut streaming_dist = thermal_dist.zeros_like();
+        streaming_dist = streaming_dist.slice_assign(
+            s![1..-1, 1..-1],
+            stream_interior_windows(thermal_dist.clone()),
+        );
+
+        streaming_dist = streaming_dist
+            .slice_assign(s![0, .., 1, 1], thermal_dist.clone().slice(s![0, .., 1, 1]));
+        streaming_dist = streaming_dist
+            .slice_assign(s![.., 0, 1, 1], thermal_dist.clone().slice(s![.., 0, 1, 1]));
+        streaming_dist = streaming_dist.slice_assign(
+            s![-1, .., 1, 1],
+            thermal_dist.clone().slice(s![-1, .., 1, 1]),
+        );
+        streaming_dist = streaming_dist.slice_assign(
+            s![.., -1, 1, 1],
+            thermal_dist.clone().slice(s![.., -1, 1, 1]),
+        );
+
+        // stream top edges.
+        // e[-1, -1]; v[0, 0]
+        streaming_dist = streaming_dist.slice_assign(
+            s![0, ..-1, 0, 0],
+            thermal_dist.clone().slice(s![1, 1.., 0, 0]),
+        );
+        // e[-1, 0]; v[0, 1]
+        streaming_dist = streaming_dist
+            .slice_assign(s![0, .., 0, 1], thermal_dist.clone().slice(s![1, .., 0, 1]));
+        // e[-1, 1]; v[0, 2]
+        streaming_dist = streaming_dist.slice_assign(
+            s![0, 1.., 0, 2],
+            thermal_dist.clone().slice(s![1, ..-1, 0, 2]),
+        );
+
+        // stream bottom edges.
+        // e[1, -1]; v[2, 0]
+        streaming_dist = streaming_dist.slice_assign(
+            s![-1, ..-1, 2, 0],
+            thermal_dist.clone().slice(s![-2, 1.., 2, 0]),
+        );
+        // e[1, 0]; v[2, 1]
+        streaming_dist = streaming_dist.slice_assign(
+            s![-1, .., 2, 1],
+            thermal_dist.clone().slice(s![1, .., 2, 1]),
+        );
+        // e[1, 1]; v[2, 2]
+        streaming_dist = streaming_dist.slice_assign(
+            s![-1, 1.., 2, 2],
+            thermal_dist.clone().slice(s![-2, ..-1, 2, 2]),
+        );
+
+        // stream left edges.
+        // e[-1, -1]; v[0, 0]
+        streaming_dist = streaming_dist.slice_assign(
+            s![..-1, 0, 0, 0],
+            thermal_dist.clone().slice(s![1.., 1, 0, 0]),
+        );
+        // e[0, -1]; v[1, 0]
+        streaming_dist = streaming_dist
+            .slice_assign(s![.., 0, 1, 0], thermal_dist.clone().slice(s![.., 1, 1, 0]));
+        // e[1, -1]; v[2, 0]
+        streaming_dist = streaming_dist.slice_assign(
+            s![1.., 0, 2, 0],
+            thermal_dist.clone().slice(s![..-1, 1, 2, 0]),
+        );
+
+        // stream right edges.
+        // e[-1, 1]; v[0, 2]
+        streaming_dist = streaming_dist.slice_assign(
+            s![..-1, -1, 0, 2],
+            thermal_dist.clone().slice(s![1.., -2, 0, 2]),
+        );
+        // e[0, 1]; v[1, 2]
+        streaming_dist = streaming_dist.slice_assign(
+            s![.., -1, 1, 2],
+            thermal_dist.clone().slice(s![.., -2, 1, 2]),
+        );
+        // e[1, 1]; v[2, 2]
+        streaming_dist = streaming_dist.slice_assign(
+            s![1.., -1, 2, 2],
+            thermal_dist.clone().slice(s![..-1, -2, 2, 2]),
+        );
+
+        streaming_dist
+    }
+
+    #[test]
+    fn test_debug_flow_loss() {
+        type B = Wgpu;
+        let device = Default::default();
+
+        let height = 4;
+        let width = 4;
+
+        let solid_mask: Tensor<B, 2, Bool> = Tensor::full([height, width], false, &device)
+            .slice_fill(s![0, ..], true)
+            .slice_fill(s![-1, ..], true)
+            .slice_fill(s![.., 0], true)
+            .slice_fill(s![.., -1], true);
+
+        let e = direction_vectors(&device);
+        let w = weight_matrix(&device);
+
+        let dist_t0: Tensor<B, 4> = Tensor::zeros([height, width, 3, 3], &device)
+            .slice_fill(s![.., .., 1, 1], 1.0)
+            .slice_fill(s![1, 1, 1, 1], 10.0);
+        print_dist("dist_t0", dist_t0.clone());
+
+        let mut current = dist_t0.clone();
+
+        let k = 4;
+        for t_idx in 1..=k {
+            let thermal_phase = combined_isotropic_collision(
+                current.clone(),
+                e.clone(),
+                w.clone(),
+                solid_mask.clone(),
+                RelaxationParam::Tau(1.0),
+                None,
+            );
+            print_dist(
+                format!("thermal {t_idx}").to_string().as_str(),
+                thermal_phase.clone(),
+            );
+
+            let stream_phase = combined_stream(thermal_phase.clone());
+            print_dist(
+                format!("stream {t_idx}").to_string().as_str(),
+                stream_phase.clone(),
+            );
+
+            current = stream_phase;
+        }
+    }
 }

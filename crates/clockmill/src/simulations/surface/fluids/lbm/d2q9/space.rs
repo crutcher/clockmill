@@ -1,8 +1,109 @@
 //! # Space Primitives
 use bimm_contracts::unpack_shape_contract;
 use burn::Tensor;
+use burn::module::Module;
 use burn::prelude::{Backend, ElementConversion, Int};
+use burn::tensor::DType;
 use burn::tensor::DType::F32;
+
+/// D2Q9 Direction Indices
+///
+/// # Returns
+///
+/// The ``[VY=3, VX=3, (VY, VX)=2]`` int direction indices.
+pub fn direction_indices<B: Backend>(device: &B::Device) -> Tensor<B, 3, Int> {
+    Tensor::<B, 3, Int>::from_data(
+        [
+            [[-1, -1], [-1, 0], [-1, 1]],
+            [[0, -1], [0, 0], [0, 1]],
+            [[1, -1], [1, 0], [1, 1]],
+        ],
+        device,
+    )
+}
+
+/// D2Q9 Direction Vectors
+///
+/// # Returns
+///
+/// The ``[VY=3, VX=3, (VY, VX)=2]`` float direction vectors.
+pub fn direction_vectors<B: Backend>(device: &B::Device) -> Tensor<B, 3> {
+    direction_indices(device).float()
+}
+
+/// D2Q9 Equilibrium Weight Matrix
+///
+/// # Returns
+///
+/// The ``[VY=3, VX=3]`` equilibrium weight matrix.
+pub fn weight_matrix<B: Backend>(device: &B::Device) -> Tensor<B, 2> {
+    Tensor::<B, 2>::from_data(
+        [
+            [1.0 / 36.0, 1.0 / 9.0, 1.0 / 36.0],
+            [1.0 / 9.0, 4.0 / 9.0, 1.0 / 9.0],
+            [1.0 / 36.0, 1.0 / 9.0, 1.0 / 36.0],
+        ],
+        device,
+    )
+}
+
+/// LBM Space Constants
+#[derive(Module, Debug)]
+pub struct LbmTables<B: Backend> {
+    /// ``[H, W, (Y, X)=2]`` integer direction indices.
+    e_idx: Tensor<B, 3, Int>,
+
+    /// ``[H, W, (Y, X)=2]`` float direction vectors.
+    e_vec: Tensor<B, 3>,
+
+    /// ``[Y=3, X=3]`` equilibrium weights
+    w: Tensor<B, 2>,
+}
+
+impl<B: Backend> LbmTables<B> {
+    /// Create new space `lbm_tables`.
+    pub fn init(device: &B::Device) -> Self {
+        let e_idx = direction_indices(device);
+        let e_vec = e_idx.clone().float();
+        Self {
+            e_idx,
+            e_vec,
+            w: weight_matrix(device),
+        }
+    }
+
+    /// Get appropriate `lbm_tables` for the distribution.
+    pub fn for_dist(dist: &Tensor<B, 4>) -> Self {
+        Self::init(&dist.device()).to_dtype(dist.dtype())
+    }
+
+    /// Cast the `lbm_tables` to the given dtype.
+    pub fn to_dtype(
+        self,
+        dtype: DType,
+    ) -> Self {
+        Self {
+            e_vec: self.e_vec.cast(dtype),
+            w: self.w.cast(dtype),
+            ..self
+        }
+    }
+
+    /// Get the direction indices.
+    pub fn e_idx(&self) -> Tensor<B, 3, Int> {
+        self.e_idx.clone()
+    }
+
+    /// Get the direction vectors.
+    pub fn e_vec(&self) -> Tensor<B, 3> {
+        self.e_vec.clone()
+    }
+
+    /// Get the equilibrium weight matrix.
+    pub fn w(&self) -> Tensor<B, 2> {
+        self.w.clone()
+    }
+}
 
 /// Print a distribution.
 ///
@@ -153,52 +254,11 @@ pub fn velocity_squared<B: Backend>(u: Tensor<B, 3>) -> Tensor<B, 2> {
 /// - `velocity`: ``[H, W, (Y, X)=2]``
 pub fn moments<B: Backend>(
     dist: Tensor<B, 4>,
-    e: Tensor<B, 3>,
+    lbm_tables: &LbmTables<B>,
 ) -> (Tensor<B, 2>, Tensor<B, 3>) {
     let rho = density(dist.clone());
-    let u = macroscopic_velocity(dist, rho.clone(), e);
+    let u = macroscopic_velocity(dist, rho.clone(), lbm_tables.e_vec());
     (rho, u)
-}
-
-/// D2Q9 Direction Indices
-///
-/// # Returns
-///
-/// The ``[VY=3, VX=3, (VY, VX)=2]`` int direction indices.
-pub fn direction_indices<B: Backend>(device: &B::Device) -> Tensor<B, 3, Int> {
-    Tensor::<B, 3, Int>::from_data(
-        [
-            [[-1, -1], [-1, 0], [-1, 1]],
-            [[0, -1], [0, 0], [0, 1]],
-            [[1, -1], [1, 0], [1, 1]],
-        ],
-        device,
-    )
-}
-
-/// D2Q9 Direction Vectors
-///
-/// # Returns
-///
-/// The ``[VY=3, VX=3, (VY, VX)=2]`` float direction vectors.
-pub fn direction_vectors<B: Backend>(device: &B::Device) -> Tensor<B, 3> {
-    direction_indices(device).float()
-}
-
-/// D2Q9 Equilibrium Weight Matrix
-///
-/// # Returns
-///
-/// The ``[VY=3, VX=3]`` equilibrium weight matrix.
-pub fn weight_matrix<B: Backend>(device: &B::Device) -> Tensor<B, 2> {
-    Tensor::<B, 2>::from_data(
-        [
-            [1.0 / 36.0, 1.0 / 9.0, 1.0 / 36.0],
-            [1.0 / 9.0, 4.0 / 9.0, 1.0 / 9.0],
-            [1.0 / 36.0, 1.0 / 9.0, 1.0 / 36.0],
-        ],
-        device,
-    )
 }
 
 /// Fold a distribution into windows.
@@ -306,16 +366,16 @@ mod tests {
             &device,
         );
 
-        let e = direction_vectors(&device);
+        let lbm_tables = LbmTables::for_dist(&dist);
 
-        let momentum = macroscopic_momentum(dist.clone(), e.clone());
+        let momentum = macroscopic_momentum(dist.clone(), lbm_tables.e_vec());
 
         momentum.clone().to_data().assert_approx_eq::<f32>(
             &Tensor::<B, 3>::from_data([[[-1., -1.], [15., 5.]]], &device).to_data(),
             Tolerance::default(),
         );
 
-        let (rho, u) = moments(dist.clone(), e.clone());
+        let (rho, u) = moments(dist.clone(), &lbm_tables);
 
         let rho_data = rho.to_data().to_vec::<f32>().unwrap();
 

@@ -1,5 +1,6 @@
 //! # Streaming Operations
 
+use crate::simulations::surface::fluids::lbm::d2q9::space::LbmTables;
 use crate::simulations::surface::fluids::lbm::d2q9::{collision, reflection, space};
 use bimm_contracts::unpack_shape_contract;
 use burn::Tensor;
@@ -101,11 +102,12 @@ pub fn stream_edge_crossflow<B: Backend>(source: Tensor<B, 2>) -> Tensor<B, 2> {
 }
 
 /// Advance the world simulation by one step.
-pub fn _advance_step<B: Backend>(
+#[allow(unused)]
+fn _advance_step<B: Backend>(
     dist: Tensor<B, 4>,
     solid_mask: Tensor<B, 2, Bool>,
-    e: Tensor<B, 3>,
-    w: Tensor<B, 2>,
+    _e: Tensor<B, 3>,
+    _w: Tensor<B, 2>,
     omega: Tensor<B, 2>,
     correction_term: Option<f64>,
 ) -> (Tensor<B, 4>, f64) {
@@ -126,15 +128,12 @@ pub fn _advance_step<B: Backend>(
         .slice_fill(s![.., 0], true)
         .slice_fill(s![.., -1], true);
 
+    let lbm_tables = LbmTables::for_dist(&dist);
+
     // Local Updates:
     // 1. Internal cell collisions.
-    let col_dist = collision::bgk_collision(
-        dist.clone(),
-        e.clone(),
-        w.clone(),
-        omega.clone(),
-        correction_term,
-    );
+    let col_dist =
+        collision::bgk_collision(dist.clone(), omega.clone(), correction_term, &lbm_tables);
     let thermal_dist = reflection::with_spherical_reflection(dist.clone(), col_dist, solid_mask);
 
     let energy_delta: f64 = -(thermal_dist.clone().slice(s![0, .., 0, ..]).sum()

@@ -8,7 +8,7 @@ use clockmill::simulations::surface::fluids::lbm::d2q9::collision::{
 };
 use clockmill::simulations::surface::fluids::lbm::d2q9::reflection::with_spherical_reflection;
 use clockmill::simulations::surface::fluids::lbm::d2q9::relaxation::RelaxationParam;
-use clockmill::simulations::surface::fluids::lbm::d2q9::space::{direction_vectors, weight_matrix};
+use clockmill::simulations::surface::fluids::lbm::d2q9::space::LbmTables;
 use clockmill::simulations::surface::fluids::lbm::d2q9::streaming::stream_interior_windows;
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
@@ -24,19 +24,16 @@ fn bench_lbm_d2q9(c: &mut Criterion) {
     let relaxation = RelaxationParam::Omega(1.5);
 
     for dtype in [F16, F32] {
-        let e = direction_vectors(&device);
-        let w = weight_matrix(&device);
-
         let dist = Tensor::<B, 4>::random([n, n, 3, 3], Distribution::Default, &device);
+        let dist = dist.cast(dtype);
+
         let solid_mask = Tensor::<B, 2, Bool>::full([n, n], false, &device);
 
-        let e = e.cast(dtype);
-        let w = w.cast(dtype);
-        let dist = dist.cast(dtype);
+        let lbm_tables = LbmTables::for_dist(&dist);
 
         group.bench_function(format!("{:?} bgk_collision", dtype).as_str(), |b| {
             b.iter(|| {
-                let dist_col = bgk_collision(dist.clone(), e.clone(), w.clone(), relaxation, None);
+                let dist_col = bgk_collision(dist.clone(), relaxation, None, &lbm_tables);
 
                 black_box(dist_col.mean().into_scalar());
             })
@@ -46,11 +43,10 @@ fn bench_lbm_d2q9(c: &mut Criterion) {
             b.iter(|| {
                 let dist_col = bgk_collision_with_spherical_reflection(
                     dist.clone(),
-                    e.clone(),
-                    w.clone(),
                     solid_mask.clone(),
                     relaxation,
                     None,
+                    &lbm_tables,
                 );
 
                 black_box(dist_col.mean().into_scalar());
@@ -69,7 +65,7 @@ fn bench_lbm_d2q9(c: &mut Criterion) {
             b.iter(|| {
                 let dist = with_spherical_reflection(
                     dist.clone(),
-                    bgk_collision(dist.clone(), e.clone(), w.clone(), relaxation, None),
+                    bgk_collision(dist.clone(), relaxation, None, &lbm_tables),
                     solid_mask.clone(),
                 );
 

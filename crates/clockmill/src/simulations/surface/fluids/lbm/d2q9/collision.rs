@@ -5,7 +5,7 @@ use crate::simulations::surface::fluids::lbm::d2q9::{reflection, relaxation, spa
 use burn::Tensor;
 use burn::prelude::{Backend, Bool};
 
-/// Naive aggregate Bhatnagar-Gross-Krook collision operator.
+/// Bhatnagar-Gross-Krook collision operator.
 ///
 /// This operator makes no accounting for solids, reflection,
 /// or boundaries.
@@ -18,22 +18,21 @@ use burn::prelude::{Backend, Bool};
 ///
 /// # Arguments
 /// - `dist`: ``[H, W, VY=3, VX=3]`` current distribution
-/// - `equi_dist`: ``[H, W, VY=3, VX=3]`` equilibrium distribution
 /// - `relaxation`: relaxation parameter.
 /// - `correction`: fused correction factor for the relaxation operator;
 ///   defaults to 1.0.
+/// - `lbm_tables`: LBM Reference Tables.
 ///
 /// # Returns
 /// - `[H, W, VY=3, VX=3]` post-collision distribution
 pub fn bgk_collision<B: Backend, S: Into<OmegaSource<B>>>(
     dist: Tensor<B, 4>,
-    e: Tensor<B, 3>,
-    w: Tensor<B, 2>,
     relaxation: S,
     correction: Option<f64>,
+    lbm_tables: &space::LbmTables<B>,
 ) -> Tensor<B, 4> {
-    let (source_rho, u) = space::moments(dist.clone(), e.clone());
-    let eq_dist = thermal::thermal_equilibrium(source_rho.clone(), u, e, w);
+    let (source_rho, u) = space::moments(dist.clone(), lbm_tables);
+    let eq_dist = thermal::thermal_equilibrium(source_rho.clone(), u, lbm_tables);
     relaxation::relaxed_sum(dist, eq_dist, relaxation, correction)
 }
 
@@ -44,25 +43,24 @@ pub fn bgk_collision<B: Backend, S: Into<OmegaSource<B>>>(
 /// - [`reflection::with_spherical_reflection`]
 ///
 /// # Arguments
-/// - `pre_dist`: ``[H, W, VY=3, VX=3]`` pre-collision distribution
-/// - `naive_dist`: ``[H, W, VY=3, VX=3]`` post-collision distribution
+/// - `dist`: ``[H, W, VY=3, VX=3]`` pre-collision distribution
 /// - `solid_mask`: ``[H, W]`` mask of solid locations.
 /// - `correction`: fused correction factor for the relaxation operator;
 ///   defaults to 1.0.
+/// - `lbm_tables`: LBM Reference Tables.
 ///
 /// # Returns
 /// - ``[H, W, VY=3, VX=3]`` distribution.
 pub fn bgk_collision_with_spherical_reflection<B: Backend>(
     dist: Tensor<B, 4>,
-    e: Tensor<B, 3>,
-    w: Tensor<B, 2>,
     solid_mask: Tensor<B, 2, Bool>,
     relaxation: RelaxationParam,
     correction: Option<f64>,
+    lbm_tables: &space::LbmTables<B>,
 ) -> Tensor<B, 4> {
     reflection::with_spherical_reflection(
         dist.clone(),
-        bgk_collision(dist, e, w, relaxation, correction),
+        bgk_collision(dist, relaxation, correction, lbm_tables),
         solid_mask,
     )
 }
@@ -72,9 +70,7 @@ mod tests {
     use super::*;
 
     use crate::simulations::surface::fluids::lbm::d2q9::relaxation::RelaxationParam;
-    use crate::simulations::surface::fluids::lbm::d2q9::space::{
-        density, direction_vectors, weight_matrix,
-    };
+    use crate::simulations::surface::fluids::lbm::d2q9::space::density;
     use burn::Tensor;
     use burn::backend::Wgpu;
     use burn::tensor::DType::F32;
@@ -87,20 +83,13 @@ mod tests {
 
         let dtype = F32;
 
-        let e = direction_vectors(&device).cast(dtype);
-        let w = weight_matrix(&device).cast(dtype);
-
         let dist = Tensor::<B, 4>::random([20, 20, 3, 3], Distribution::Uniform(0.1, 1.0), &device)
             .cast(dtype);
         let rho = density(dist.clone());
 
-        let col_dist = bgk_collision(
-            dist.clone(),
-            e.clone(),
-            w.clone(),
-            RelaxationParam::Omega(0.5),
-            None,
-        );
+        let lbm_tables = space::LbmTables::for_dist(&dist);
+
+        let col_dist = bgk_collision(dist.clone(), RelaxationParam::Omega(0.5), None, &lbm_tables);
 
         // Invariant: density(collision(dist, param)) == density(dist)
         density(col_dist.clone())
@@ -111,10 +100,9 @@ mod tests {
         {
             let col_dist = bgk_collision(
                 dist.clone(),
-                e.clone(),
-                w.clone(),
                 RelaxationParam::Omega(0.5),
                 Some(1.2),
+                &lbm_tables,
             );
 
             // Invariant: density(collision(dist, param)) == density(dist)

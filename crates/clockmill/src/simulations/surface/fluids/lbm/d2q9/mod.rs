@@ -44,9 +44,8 @@ pub const C4: f64 = C2 * C2;
 mod tests {
     use crate::simulations::surface::fluids::lbm::d2q9::collision::bgk_collision_with_spherical_reflection;
     use crate::simulations::surface::fluids::lbm::d2q9::relaxation::RelaxationParam;
-    use crate::simulations::surface::fluids::lbm::d2q9::space::{
-        dbg_dist, direction_vectors, weight_matrix,
-    };
+    use crate::simulations::surface::fluids::lbm::d2q9::space;
+    use crate::simulations::surface::fluids::lbm::d2q9::space::dbg_dist;
     use crate::simulations::surface::fluids::lbm::d2q9::streaming::outflow_clipping_stream;
     use burn::Tensor;
     use burn::backend::Wgpu;
@@ -66,15 +65,14 @@ mod tests {
             .slice_fill(s![.., 0], true)
             .slice_fill(s![.., -1], true);
 
-        let e = direction_vectors(&device);
-        let w = weight_matrix(&device);
-
         let dist_t0: Tensor<B, 4> = Tensor::zeros([height, width, 3, 3], &device)
             .slice_fill(s![.., .., 1, 1], 1.0)
             .slice_fill(s![1, 1, 1, 1], 3.0)
             .slice_fill(s![1, -2, 1, 1], 5.0)
             .slice_fill(s![-2, -2, 1, 1], 10.0);
         dbg_dist("dist_t0", dist_t0.clone());
+
+        let lbm_tables = space::LbmTables::init(&device);
 
         let mut current = dist_t0.clone();
 
@@ -88,11 +86,10 @@ mod tests {
 
             let thermal_phase = bgk_collision_with_spherical_reflection(
                 stream_phase,
-                e.clone(),
-                w.clone(),
                 solid_mask.clone(),
                 RelaxationParam::Tau(1.0),
                 None,
+                &lbm_tables,
             );
             dbg_dist(
                 format!("thermal {t_idx}").to_string().as_str(),

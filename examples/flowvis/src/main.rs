@@ -8,9 +8,10 @@ use clockmill::simulations::surface::fluids::lbm::d2q9::relaxation::RelaxationPa
 use clockmill::simulations::surface::fluids::lbm::d2q9::simulation::{
     LBMD2Q9Config, LBMD2Q9State, LBMMeta,
 };
-use clockmill::simulations::surface::fluids::lbm::d2q9::space::direction_vectors;
+use clockmill::simulations::surface::fluids::lbm::d2q9::space::LbmTables;
 use clockmill::simulations::surface::fluids::lbm::d2q9::space::{density, macroscopic_momentum};
 use glutin_window::GlutinWindow as Window;
+use indicatif::ProgressBar;
 use opengl_graphics::{GlGraphics, OpenGL};
 use piston::event_loop::{EventSettings, Events};
 use piston::input::RenderEvent;
@@ -36,7 +37,7 @@ pub struct Args {
     pub fps: u64,
 
     /// The tics per second.
-    #[arg(long, default_value_t = 150.)]
+    #[arg(long, default_value_t = 150.0)]
     pub tps: f32,
 
     /// The initial window zoom.
@@ -97,26 +98,6 @@ fn run<B: Backend>(args: &Args) {
         .slice_fill(s![150, 50..75], true)
         .slice_fill(s![150, 100..125], true);
 
-    /*
-    let prism_shape = [height / 2, width / 2];
-    world_state.omega = world_state
-        .omega
-        .slice_fill(
-            s![
-                -((3 * prism_shape[0] / 2) as isize)..-((prism_shape[0] / 2) as isize),
-                -((3 * prism_shape[1] / 2) as isize)..-((prism_shape[1] / 2) as isize),
-            ],
-            0.01,
-        )
-        .slice_fill(
-            s![
-                -((5 * prism_shape[0] / 4) as isize)..-((3 * prism_shape[0] / 4) as isize),
-                -((5 * prism_shape[1] / 4) as isize)..-((3 * prism_shape[1] / 4) as isize),
-            ],
-            RelaxationParam::Tau(args.tau).as_omega_value(),
-        );
-     */
-
     let mut world_state = world_state.to_dtype(dtype);
     world_state.save_correct_total_mass();
 
@@ -126,10 +107,12 @@ fn run<B: Backend>(args: &Args) {
 
     let solid_mask: Tensor<B, 2, Bool> = world_state.solid_mask.clone();
 
-    let sim = Simulation::new(
-        world_state,
-        std::time::Duration::from_secs_f32(1.0 / args.tps),
-    );
+    let sim_delay = if args.tps > 0.0 {
+        Some(Duration::from_secs_f32(1.0 / args.tps))
+    } else {
+        None
+    };
+    let sim = Simulation::new(world_state, sim_delay);
 
     // Create a Glutin window.
     let mut window: Window = WindowSettings::new(
@@ -172,7 +155,7 @@ pub struct Simulation<B: Backend> {
 impl<B: Backend> Simulation<B> {
     pub fn new(
         world: LBMD2Q9State<B>,
-        step_duration: Duration,
+        step_duration: Option<Duration>,
     ) -> Self {
         let shutdown = Arc::new(AtomicBool::new(false));
         let state = Arc::new(Mutex::new(world.dist.clone()));
@@ -182,11 +165,27 @@ impl<B: Backend> Simulation<B> {
         let state_clone = state.clone();
 
         let handle = thread::spawn(move || {
+            let progress = ProgressBar::new_spinner();
+
             let mut world = world;
 
             let mut stash = 0.0;
 
+            let delay_smoothing = 20;
+            let mut avg_delay = std::time::Duration::from_secs_f32(0.0);
+            let mut last_time = std::time::Instant::now();
+
             while !shutdown_clone.load(Ordering::Relaxed) {
+                {
+                    let now = std::time::Instant::now();
+                    let dt = now - last_time;
+                    avg_delay = (avg_delay * delay_smoothing + dt) / (delay_smoothing + 1);
+                    last_time = now;
+                }
+                let avg_tps = 1.0 / avg_delay.as_secs_f32();
+                progress.set_message(format!("sim:{:.0}tps", avg_tps));
+                progress.tick();
+
                 let dist = world.dist.clone();
 
                 let drift = width / 4;
@@ -237,7 +236,9 @@ impl<B: Backend> Simulation<B> {
                 world.advance_step();
                 *state_clone.lock().unwrap() = world.dist.clone();
 
-                thread::sleep(step_duration);
+                if let Some(step_duration) = step_duration {
+                    thread::sleep(step_duration);
+                }
             }
         });
 
@@ -276,11 +277,11 @@ impl<B: Backend> FlowVisApp<B> {
         let [height, width] = self.get_world_shape();
         let state = self.get_state();
 
-        let e = direction_vectors(&state.device()).cast(state.dtype());
+        let constants: LbmTables<B> = LbmTables::for_dist(&state);
 
         // let (_rho, u) = moments(dist.clone(), e.clone());
         // let cells = fast_powi_2(u);
-        let cells = macroscopic_momentum(state.clone(), e.clone());
+        let cells = macroscopic_momentum(state.clone(), constants.e_vec());
 
         // let scale = cells.clone().max().into_scalar();
         let scale = SPEED_OF_SOUND / 1000.0;

@@ -1,4 +1,5 @@
 //! # Thermal Equilibrium
+use crate::simulations::surface::fluids::lbm::d2q9::space::LbmTables;
 use crate::simulations::surface::fluids::lbm::d2q9::{C2, C4, space};
 use burn::Tensor;
 use burn::prelude::Backend;
@@ -8,8 +9,7 @@ use burn::prelude::Backend;
 /// # Arguments
 /// - `rho`: ``[H, W]`` population density
 /// - `u`: ``[H, W, (Y, X)=2]`` macroscopic velocity
-/// - `e`: ``[Y=3, X=3, (Y, X)=2]`` direction vectors
-/// - `w`: ``[Y=3, X=3]`` equilibrium weights
+/// - `lbm_tables`: LBM Reference Tables.
 ///
 /// # Returns
 /// - `[H, W, Y=3, X=3]` equilibrium distribution
@@ -17,11 +17,10 @@ use burn::prelude::Backend;
 pub fn thermal_equilibrium<B: Backend>(
     rho: Tensor<B, 2>,
     u: Tensor<B, 3>,
-    e: Tensor<B, 3>,
-    w: Tensor<B, 2>,
+    lbm_tables: &LbmTables<B>,
 ) -> Tensor<B, 4> {
     // [H, W, Y, X]
-    let e_dot_u = lattice_dot_velocity(u.clone(), e);
+    let e_dot_u = lattice_dot_velocity(u.clone(), lbm_tables.e_vec());
 
     // [H, W]
     let u_sq = space::velocity_squared(u);
@@ -29,7 +28,7 @@ pub fn thermal_equilibrium<B: Backend>(
     // [H, W, 1, 1]
     let rho = rho.unsqueeze_dims::<4>(&[2, 3]);
 
-    (w.unsqueeze() * rho).mul(
+    (lbm_tables.w().unsqueeze() * rho).mul(
         1.0
             + e_dot_u.clone() / C2
             + e_dot_u.square() / (2.0 * C4)
@@ -74,7 +73,7 @@ pub fn ldv_projection<B: Backend>(
 mod tests {
     use super::*;
     use crate::simulations::surface::fluids::lbm::d2q9::space::{
-        density, direction_vectors, moments, velocity_squared, weight_matrix,
+        LbmTables, density, direction_vectors, moments, velocity_squared,
     };
     use crate::simulations::surface::fluids::lbm::d2q9::thermal::lattice_dot_velocity;
     use burn::backend::Wgpu;
@@ -89,20 +88,19 @@ mod tests {
 
         let dist = Tensor::<B, 4>::random([20, 20, 3, 3], Distribution::Default, &device);
 
-        let e = direction_vectors(&device);
-        let w = weight_matrix(&device);
+        let lbm_tables = LbmTables::for_dist(&dist);
 
-        let (rho, u) = moments(dist.clone(), e.clone());
+        let (rho, u) = moments(dist.clone(), &lbm_tables);
 
-        let equi_dist = thermal_equilibrium(rho.clone(), u.clone(), e.clone(), w.clone());
+        let equi_dist = thermal_equilibrium(rho.clone(), u.clone(), &lbm_tables);
 
         density(equi_dist.clone())
             .to_data()
             .assert_approx_eq::<f32>(&rho.to_data(), Tolerance::default());
 
-        let e_dot_u = lattice_dot_velocity(u.clone(), e);
+        let e_dot_u = lattice_dot_velocity(u.clone(), lbm_tables.e_vec());
         let u_sq = velocity_squared(u);
-        let expected_eq = (w.unsqueeze() * rho.unsqueeze_dim(2)).mul(
+        let expected_eq = (lbm_tables.w().unsqueeze() * rho.unsqueeze_dim(2)).mul(
             1
                 + 3.0 * e_dot_u.clone()
                 + 4.5 * e_dot_u.square()
@@ -119,14 +117,13 @@ mod tests {
 
         let dtype = F32;
 
-        let e = direction_vectors(&device).cast(dtype);
-        let w = weight_matrix(&device).cast(dtype);
-
         let dist = Tensor::<B, 4>::random([20, 20, 3, 3], Distribution::Uniform(0.1, 1.0), &device)
             .cast(dtype);
 
-        let (rho, u) = moments(dist.clone(), e.clone());
-        let equi_dist = thermal_equilibrium(rho.clone(), u.clone(), e.clone(), w.clone());
+        let lbm_tables = LbmTables::for_dist(&dist);
+
+        let (rho, u) = moments(dist.clone(), &lbm_tables);
+        let equi_dist = thermal_equilibrium(rho.clone(), u.clone(), &lbm_tables);
 
         // Invariant: density(equilibrium(dist)) == density(dist)
         density(equi_dist.clone())

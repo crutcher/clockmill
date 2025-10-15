@@ -4,7 +4,7 @@
 use crate::simulations::surface::fluids::lbm::d2q9::collision::bgk_collision;
 use crate::simulations::surface::fluids::lbm::d2q9::reflection::with_spherical_reflection;
 use crate::simulations::surface::fluids::lbm::d2q9::relaxation::RelaxationParam;
-use crate::simulations::surface::fluids::lbm::d2q9::space::{direction_vectors, weight_matrix};
+use crate::simulations::surface::fluids::lbm::d2q9::space::LbmTables;
 use crate::simulations::surface::fluids::lbm::d2q9::streaming::outflow_clipping_stream;
 use burn::Tensor;
 use burn::config::Config;
@@ -58,13 +58,13 @@ impl LBMD2Q9Config {
 
         let solid_mask = Tensor::<B, 2>::zeros([height, width], device).bool();
 
-        let e = direction_vectors(device);
-        let w = weight_matrix(device);
+        let lbm_tables = LbmTables::init(device);
 
         // Start off in a relaxed state.
         let state = Tensor::<B, 4>::empty([height, width, 3, 3], device).slice_assign(
             s![1..-1, 1..-1],
-            w.clone()
+            lbm_tables
+                .w()
                 .unsqueeze::<4>()
                 .expand([height - 2, width - 2, 3, 3])
                 * rho,
@@ -81,8 +81,7 @@ impl LBMD2Q9Config {
             dist: state,
             correct_total_mass: total_mass,
             solid_mask,
-            e,
-            w,
+            lbm_tables,
             omega,
         }
     }
@@ -108,11 +107,8 @@ pub struct LBMD2Q9State<B: Backend> {
     /// The relaxation field.
     pub omega: Tensor<B, 2>,
 
-    /// Direction Vectors
-    pub e: Tensor<B, 3>,
-
-    /// Weight Matrix
-    pub w: Tensor<B, 2>,
+    /// Space Constants
+    pub lbm_tables: LbmTables<B>,
 }
 
 impl<B: Backend> LBMMeta for LBMD2Q9State<B> {
@@ -140,8 +136,7 @@ impl<B: Backend> LBMD2Q9State<B> {
     ) -> Self {
         Self {
             dist: self.dist.cast(dtype),
-            e: self.e.cast(dtype),
-            w: self.w.cast(dtype),
+            lbm_tables: self.lbm_tables.to_dtype(dtype),
             ..self
         }
     }
@@ -187,10 +182,9 @@ impl<B: Backend> LBMD2Q9State<B> {
             stream_phase.clone(),
             bgk_collision(
                 stream_phase.clone(),
-                self.e.clone(),
-                self.w.clone(),
                 self.omega.clone(),
-                None, // Some(self.correction_term()),
+                None,
+                &self.lbm_tables,
             ),
             solid_mask,
         );

@@ -9,6 +9,8 @@ burn = { workspace = true, features = ["fusion", "autotune"] }
 clockmill = { path = "../../crates/clockmill" }
 clap = { workspace = true, features = ["derive"] }
 
+indicatif = { workspace = true }
+
 piston = { workspace = true}
 piston2d-graphics = { workspace = true}
 pistoncore-glutin_window = { workspace = true}
@@ -20,7 +22,7 @@ rand = { workspace = true }
 workspace = true
 
 [features]
-default = ["cuda"]
-cuda = ["burn/cuda", "burn/cubecl"]
+default = ["wgpu"]
+cuda = ["burn/cuda"]
 metal = ["burn/metal"]
 wgpu = ["burn/wgpu"]

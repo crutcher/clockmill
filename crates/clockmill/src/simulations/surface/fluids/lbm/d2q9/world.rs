@@ -2,8 +2,8 @@
 //! # LBM D2Q9 World Module
 
 use crate::simulations::surface::fluids::lbm::d2q9::operations::{
-    RelaxationParam, bgk_collision, direction_vectors, half_stream_x, half_stream_y,
-    stream_interior_windows, weight_matrix, with_spherical_reflection,
+    RelaxationParam, bgk_collision, combined_stream, direction_vectors, half_stream_x,
+    half_stream_y, weight_matrix, with_spherical_reflection,
 };
 use burn::Tensor;
 use burn::config::Config;
@@ -240,88 +240,7 @@ impl<B: Backend> LBMD2Q9State<B> {
         );
         let thermal_dist = with_spherical_reflection(dist.clone(), col_dist, solid_mask);
 
-        let mut streaming_dist = thermal_dist.zeros_like();
-        streaming_dist = streaming_dist.slice_assign(
-            s![1..-1, 1..-1],
-            stream_interior_windows(thermal_dist.clone()),
-        );
-
-        streaming_dist = streaming_dist
-            .slice_assign(s![0, .., 1, 1], thermal_dist.clone().slice(s![0, .., 1, 1]));
-        streaming_dist = streaming_dist
-            .slice_assign(s![.., 0, 1, 1], thermal_dist.clone().slice(s![.., 0, 1, 1]));
-        streaming_dist = streaming_dist.slice_assign(
-            s![-1, .., 1, 1],
-            thermal_dist.clone().slice(s![-1, .., 1, 1]),
-        );
-        streaming_dist = streaming_dist.slice_assign(
-            s![.., -1, 1, 1],
-            thermal_dist.clone().slice(s![.., -1, 1, 1]),
-        );
-
-        // stream top edges.
-        // e[-1, -1]; v[0, 0]
-        streaming_dist = streaming_dist.slice_assign(
-            s![0, ..-1, 0, 0],
-            thermal_dist.clone().slice(s![1, 1.., 0, 0]),
-        );
-        // e[-1, 0]; v[0, 1]
-        streaming_dist = streaming_dist
-            .slice_assign(s![0, .., 0, 1], thermal_dist.clone().slice(s![1, .., 0, 1]));
-        // e[-1, 1]; v[0, 2]
-        streaming_dist = streaming_dist.slice_assign(
-            s![0, 1.., 0, 2],
-            thermal_dist.clone().slice(s![1, ..-1, 0, 2]),
-        );
-
-        // stream bottom edges.
-        // e[1, -1]; v[2, 0]
-        streaming_dist = streaming_dist.slice_assign(
-            s![-1, ..-1, 2, 0],
-            thermal_dist.clone().slice(s![-2, 1.., 2, 0]),
-        );
-        // e[1, 0]; v[2, 1]
-        streaming_dist = streaming_dist.slice_assign(
-            s![-1, .., 2, 1],
-            thermal_dist.clone().slice(s![1, .., 2, 1]),
-        );
-        // e[1, 1]; v[2, 2]
-        streaming_dist = streaming_dist.slice_assign(
-            s![-1, 1.., 2, 2],
-            thermal_dist.clone().slice(s![-2, ..-1, 2, 2]),
-        );
-
-        // stream left edges.
-        // e[-1, -1]; v[0, 0]
-        streaming_dist = streaming_dist.slice_assign(
-            s![..-1, 0, 0, 0],
-            thermal_dist.clone().slice(s![1.., 1, 0, 0]),
-        );
-        // e[0, -1]; v[1, 0]
-        streaming_dist = streaming_dist
-            .slice_assign(s![.., 0, 1, 0], thermal_dist.clone().slice(s![.., 1, 1, 0]));
-        // e[1, -1]; v[2, 0]
-        streaming_dist = streaming_dist.slice_assign(
-            s![1.., 0, 2, 0],
-            thermal_dist.clone().slice(s![..-1, 1, 2, 0]),
-        );
-
-        // stream right edges.
-        // e[-1, 1]; v[0, 2]
-        streaming_dist = streaming_dist.slice_assign(
-            s![..-1, -1, 0, 2],
-            thermal_dist.clone().slice(s![1.., -2, 0, 2]),
-        );
-        // e[0, 1]; v[1, 2]
-        streaming_dist = streaming_dist.slice_assign(
-            s![.., -1, 1, 2],
-            thermal_dist.clone().slice(s![.., -2, 1, 2]),
-        );
-        // e[1, 1]; v[2, 2]
-        streaming_dist = streaming_dist.slice_assign(
-            s![1.., -1, 2, 2],
-            thermal_dist.clone().slice(s![..-1, -2, 2, 2]),
-        );
+        let streaming_dist = combined_stream(thermal_dist);
 
         // TODO: better handle of numerical instability.
         // let dist = dist.clone().mask_fill(dist.is_finite().bool_not(), 0.0);

@@ -4,7 +4,7 @@ use burn::tensor::DType::F32;
 use clap::Parser;
 use clockmill::framework::config_parsers::parse_shape;
 use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{
-    RelaxationParam, density, direction_vectors, macroscopic_momentum,
+    RelaxationParam, direction_vectors, macroscopic_momentum,
 };
 use clockmill::simulations::surface::fluids::lbm::d2q9::world::{LBMD2Q9Config, LBMD2Q9State};
 use glutin_window::GlutinWindow as Window;
@@ -92,7 +92,6 @@ fn run<B: Backend>(args: &Args) {
         .slice_fill(s![150, 100..125], true)
         .slice_fill(s![-10.., -10..], true);
 
-    /*
     let prism_shape = [height / 2, width / 2];
     world_state.omega = world_state
         .omega
@@ -110,8 +109,6 @@ fn run<B: Backend>(args: &Args) {
             ],
             RelaxationParam::Tau(args.tau).as_omega_value(),
         );
-
-     */
 
     let mut world_state = world_state.to_dtype(dtype);
     world_state.save_correct_total_mass();
@@ -252,8 +249,8 @@ impl<B: Backend> FlowVisApp<B> {
         // let cells = fast_powi_2(u);
         let cells = macroscopic_momentum(state.clone(), e.clone());
 
-        let scale = cells.clone().max().into_scalar();
-        let cells = ((cells / scale) + 1.0) / 2.0;
+        let max_cell = cells.clone().max().into_scalar();
+        let cells = ((cells / max_cell) + 1.0) / 2.0;
         // let cells = cells.mul_scalar(std::f64::consts::PI / 2.0).sin();
 
         let cells = cells.cast(F32).to_data().into_vec::<f32>().unwrap();
@@ -296,11 +293,13 @@ impl<B: Backend> FlowVisApp<B> {
     ) {
         use graphics::*;
 
+        /*
         let rho = density(self.get_state());
         let rho = rho.powi_scalar(2.0);
         let max_rho = rho.clone().max().into_scalar();
         let rho = rho.div_scalar(max_rho);
         let rho = rho.cast(F32).to_data().into_vec::<f32>().unwrap();
+         */
 
         let vis_cells = self.vis_cells();
         let solid_cells = self.solid_cells();
@@ -316,12 +315,12 @@ impl<B: Backend> FlowVisApp<B> {
                     let (uy, ux) = vis_cells[y][x];
                     let is_solid = solid_cells[y][x];
 
-                    let d = rho[y * width + x];
+                    // let d = rho[y * width + x];
 
                     let color = if is_solid {
                         [1., 1., 1., 1.]
                     } else if uy.is_finite() && ux.is_finite() {
-                        [d, uy, ux, self.opacity]
+                        [0.0, uy, ux, self.opacity]
                     } else {
                         [0., 0., 0., 1.]
                     };

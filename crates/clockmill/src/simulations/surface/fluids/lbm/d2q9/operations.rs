@@ -822,6 +822,95 @@ pub fn _advance_step<B: Backend>(
 
     (streaming_dist, energy_delta)
 }
+
+/// todo.
+pub fn combined_stream<B: Backend>(thermal_dist: Tensor<B, 4>) -> Tensor<B, 4> {
+    let mut streaming_dist = thermal_dist.zeros_like();
+    streaming_dist = streaming_dist.slice_assign(
+        s![1..-1, 1..-1],
+        stream_interior_windows(thermal_dist.clone()),
+    );
+
+    streaming_dist =
+        streaming_dist.slice_assign(s![0, .., 1, 1], thermal_dist.clone().slice(s![0, .., 1, 1]));
+    streaming_dist =
+        streaming_dist.slice_assign(s![.., 0, 1, 1], thermal_dist.clone().slice(s![.., 0, 1, 1]));
+    streaming_dist = streaming_dist.slice_assign(
+        s![-1, .., 1, 1],
+        thermal_dist.clone().slice(s![-1, .., 1, 1]),
+    );
+    streaming_dist = streaming_dist.slice_assign(
+        s![.., -1, 1, 1],
+        thermal_dist.clone().slice(s![.., -1, 1, 1]),
+    );
+
+    // stream top edges.
+    // e[-1, -1]; v[0, 0]
+    streaming_dist = streaming_dist.slice_assign(
+        s![0, ..-1, 0, 0],
+        thermal_dist.clone().slice(s![1, 1.., 0, 0]),
+    );
+    // e[-1, 0]; v[0, 1]
+    streaming_dist =
+        streaming_dist.slice_assign(s![0, .., 0, 1], thermal_dist.clone().slice(s![1, .., 0, 1]));
+    // e[-1, 1]; v[0, 2]
+    streaming_dist = streaming_dist.slice_assign(
+        s![0, 1.., 0, 2],
+        thermal_dist.clone().slice(s![1, ..-1, 0, 2]),
+    );
+
+    // stream bottom edges.
+    // e[1, -1]; v[2, 0]
+    streaming_dist = streaming_dist.slice_assign(
+        s![-1, ..-1, 2, 0],
+        thermal_dist.clone().slice(s![-2, 1.., 2, 0]),
+    );
+    // e[1, 0]; v[2, 1]
+    streaming_dist = streaming_dist.slice_assign(
+        s![-1, .., 2, 1],
+        thermal_dist.clone().slice(s![-2, .., 2, 1]),
+    );
+    // e[1, 1]; v[2, 2]
+    streaming_dist = streaming_dist.slice_assign(
+        s![-1, 1.., 2, 2],
+        thermal_dist.clone().slice(s![-2, ..-1, 2, 2]),
+    );
+
+    // stream left edges.
+    // e[-1, -1]; v[0, 0]
+    streaming_dist = streaming_dist.slice_assign(
+        s![..-1, 0, 0, 0],
+        thermal_dist.clone().slice(s![1.., 1, 0, 0]),
+    );
+    // e[0, -1]; v[1, 0]
+    streaming_dist =
+        streaming_dist.slice_assign(s![.., 0, 1, 0], thermal_dist.clone().slice(s![.., 1, 1, 0]));
+    // e[1, -1]; v[2, 0]
+    streaming_dist = streaming_dist.slice_assign(
+        s![1.., 0, 2, 0],
+        thermal_dist.clone().slice(s![..-1, 1, 2, 0]),
+    );
+
+    // stream right edges.
+    // e[-1, 1]; v[0, 2]
+    streaming_dist = streaming_dist.slice_assign(
+        s![..-1, -1, 0, 2],
+        thermal_dist.clone().slice(s![1.., -2, 0, 2]),
+    );
+    // e[0, 1]; v[1, 2]
+    streaming_dist = streaming_dist.slice_assign(
+        s![.., -1, 1, 2],
+        thermal_dist.clone().slice(s![.., -2, 1, 2]),
+    );
+    // e[1, 1]; v[2, 2]
+    streaming_dist = streaming_dist.slice_assign(
+        s![1.., -1, 2, 2],
+        thermal_dist.clone().slice(s![..-1, -2, 2, 2]),
+    );
+
+    streaming_dist
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1225,100 +1314,13 @@ mod tests {
         }
     }
 
-    fn combined_stream<B: Backend>(thermal_dist: Tensor<B, 4>) -> Tensor<B, 4> {
-        let mut streaming_dist = thermal_dist.zeros_like();
-        streaming_dist = streaming_dist.slice_assign(
-            s![1..-1, 1..-1],
-            stream_interior_windows(thermal_dist.clone()),
-        );
-
-        streaming_dist = streaming_dist
-            .slice_assign(s![0, .., 1, 1], thermal_dist.clone().slice(s![0, .., 1, 1]));
-        streaming_dist = streaming_dist
-            .slice_assign(s![.., 0, 1, 1], thermal_dist.clone().slice(s![.., 0, 1, 1]));
-        streaming_dist = streaming_dist.slice_assign(
-            s![-1, .., 1, 1],
-            thermal_dist.clone().slice(s![-1, .., 1, 1]),
-        );
-        streaming_dist = streaming_dist.slice_assign(
-            s![.., -1, 1, 1],
-            thermal_dist.clone().slice(s![.., -1, 1, 1]),
-        );
-
-        // stream top edges.
-        // e[-1, -1]; v[0, 0]
-        streaming_dist = streaming_dist.slice_assign(
-            s![0, ..-1, 0, 0],
-            thermal_dist.clone().slice(s![1, 1.., 0, 0]),
-        );
-        // e[-1, 0]; v[0, 1]
-        streaming_dist = streaming_dist
-            .slice_assign(s![0, .., 0, 1], thermal_dist.clone().slice(s![1, .., 0, 1]));
-        // e[-1, 1]; v[0, 2]
-        streaming_dist = streaming_dist.slice_assign(
-            s![0, 1.., 0, 2],
-            thermal_dist.clone().slice(s![1, ..-1, 0, 2]),
-        );
-
-        // stream bottom edges.
-        // e[1, -1]; v[2, 0]
-        streaming_dist = streaming_dist.slice_assign(
-            s![-1, ..-1, 2, 0],
-            thermal_dist.clone().slice(s![-2, 1.., 2, 0]),
-        );
-        // e[1, 0]; v[2, 1]
-        streaming_dist = streaming_dist.slice_assign(
-            s![-1, .., 2, 1],
-            thermal_dist.clone().slice(s![1, .., 2, 1]),
-        );
-        // e[1, 1]; v[2, 2]
-        streaming_dist = streaming_dist.slice_assign(
-            s![-1, 1.., 2, 2],
-            thermal_dist.clone().slice(s![-2, ..-1, 2, 2]),
-        );
-
-        // stream left edges.
-        // e[-1, -1]; v[0, 0]
-        streaming_dist = streaming_dist.slice_assign(
-            s![..-1, 0, 0, 0],
-            thermal_dist.clone().slice(s![1.., 1, 0, 0]),
-        );
-        // e[0, -1]; v[1, 0]
-        streaming_dist = streaming_dist
-            .slice_assign(s![.., 0, 1, 0], thermal_dist.clone().slice(s![.., 1, 1, 0]));
-        // e[1, -1]; v[2, 0]
-        streaming_dist = streaming_dist.slice_assign(
-            s![1.., 0, 2, 0],
-            thermal_dist.clone().slice(s![..-1, 1, 2, 0]),
-        );
-
-        // stream right edges.
-        // e[-1, 1]; v[0, 2]
-        streaming_dist = streaming_dist.slice_assign(
-            s![..-1, -1, 0, 2],
-            thermal_dist.clone().slice(s![1.., -2, 0, 2]),
-        );
-        // e[0, 1]; v[1, 2]
-        streaming_dist = streaming_dist.slice_assign(
-            s![.., -1, 1, 2],
-            thermal_dist.clone().slice(s![.., -2, 1, 2]),
-        );
-        // e[1, 1]; v[2, 2]
-        streaming_dist = streaming_dist.slice_assign(
-            s![1.., -1, 2, 2],
-            thermal_dist.clone().slice(s![..-1, -2, 2, 2]),
-        );
-
-        streaming_dist
-    }
-
     #[test]
     fn test_debug_flow_loss() {
         type B = Wgpu;
         let device = Default::default();
 
-        let height = 4;
-        let width = 4;
+        let height = 6;
+        let width = 6;
 
         let solid_mask: Tensor<B, 2, Bool> = Tensor::full([height, width], false, &device)
             .slice_fill(s![0, ..], true)
@@ -1331,12 +1333,14 @@ mod tests {
 
         let dist_t0: Tensor<B, 4> = Tensor::zeros([height, width, 3, 3], &device)
             .slice_fill(s![.., .., 1, 1], 1.0)
-            .slice_fill(s![1, 1, 1, 1], 10.0);
+            .slice_fill(s![1, 1, 1, 1], 3.0)
+            .slice_fill(s![1, -2, 1, 1], 5.0)
+            .slice_fill(s![-2, -2, 1, 1], 10.0);
         print_dist("dist_t0", dist_t0.clone());
 
         let mut current = dist_t0.clone();
 
-        let k = 4;
+        let k = 100;
         for t_idx in 1..=k {
             let thermal_phase = combined_isotropic_collision(
                 current.clone(),

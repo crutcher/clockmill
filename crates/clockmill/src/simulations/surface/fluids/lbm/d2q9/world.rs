@@ -1,8 +1,9 @@
+#![allow(dead_code)]
 //! # LBM D2Q9 World Module
 
 use crate::simulations::surface::fluids::lbm::d2q9::operations::{
     RelaxationParam, bgk_collision, direction_vectors, half_stream_x, half_stream_y,
-    stream_interior_windows, weight_matrix, with_spherical_reflection,
+    outflow_clipping_stream, weight_matrix, with_spherical_reflection,
 };
 use burn::Tensor;
 use burn::config::Config;
@@ -61,8 +62,11 @@ impl LBMD2Q9Config {
 
         // Start off in a relaxed state.
         let state = Tensor::<B, 4>::empty([height, width, 3, 3], device).slice_assign(
-            s![.., ..],
-            w.clone().unsqueeze::<4>().expand([height, width, 3, 3]) * initial_rho,
+            s![1..-1, 1..-1],
+            w.clone()
+                .unsqueeze::<4>()
+                .expand([height - 2, width - 2, 3, 3])
+                * initial_rho,
         );
         let total_mass = state.clone().sum().into_scalar().elem();
 
@@ -225,68 +229,24 @@ impl<B: Backend> LBMD2Q9State<B> {
             .slice_fill(s![.., 0], true)
             .slice_fill(s![.., -1], true);
 
-        // Local Updates:
-        // 1. Internal cell collisions.
-        let col_dist = bgk_collision(
-            dist.clone(),
-            self.e.clone(),
-            self.w.clone(),
-            self.omega.clone(),
-            Some(self.correction_term()),
-        );
-        let thermal_dist = with_spherical_reflection(dist.clone(), col_dist, solid_mask);
+        let stream_phase = outflow_clipping_stream(dist);
 
-        // 2. Boundary cell updates.
-        // For now, none; boundary cells are all effectively reflective.
-
-        // Streaming Updates.
-        // *lots* of repetitions in this; could maybe be refactored.
-        let streaming_dist = Tensor::cat(
-            vec![
-                Tensor::cat(
-                    vec![
-                        thermal_dist.clone().slice(s![0, 0]).slice_assign(
-                            s![0, 0, 0, 0],
-                            thermal_dist.clone().slice(s![1, 1, 0, 0]),
-                        ),
-                        self.stream_top_edge(thermal_dist.clone()),
-                        thermal_dist.clone().slice(s![0, -1]).slice_assign(
-                            s![0, 0, 0, 2],
-                            thermal_dist.clone().slice(s![1, -2, 0, 2]),
-                        ),
-                    ],
-                    1,
-                ),
-                Tensor::cat(
-                    vec![
-                        self.stream_left_edge(thermal_dist.clone()),
-                        stream_interior_windows(thermal_dist.clone()),
-                        self.stream_right_edge(thermal_dist.clone()),
-                    ],
-                    1,
-                ),
-                Tensor::cat(
-                    vec![
-                        thermal_dist.clone().slice(s![-1, 0]).slice_assign(
-                            s![0, 0, 2, 0],
-                            thermal_dist.clone().slice(s![-2, 1, 2, 0]),
-                        ),
-                        self.stream_bottom_edge(thermal_dist.clone()),
-                        thermal_dist.clone().slice(s![-1, -1]).slice_assign(
-                            s![0, 0, 2, 2],
-                            thermal_dist.clone().slice(s![-2, -2, 2, 2]),
-                        ),
-                    ],
-                    1,
-                ),
-            ],
-            0,
+        let thermal_phase = with_spherical_reflection(
+            stream_phase.clone(),
+            bgk_collision(
+                stream_phase.clone(),
+                self.e.clone(),
+                self.w.clone(),
+                self.omega.clone(),
+                None, // Some(self.correction_term()),
+            ),
+            solid_mask,
         );
 
         // TODO: better handle of numerical instability.
         // let dist = dist.clone().mask_fill(dist.is_finite().bool_not(), 0.0);
 
-        self.dist = streaming_dist;
+        self.dist = thermal_phase;
         self.step_count += 1;
     }
 

@@ -4,7 +4,7 @@ use burn::prelude::{Bool, s};
 use burn::tensor::DType::{F16, F32};
 use burn::tensor::Distribution;
 use clockmill::simulations::surface::fluids::lbm::d2q9::collision::{
-    bgk_collision, combined_isotropic_collision,
+    bgk_collision, bgk_collision_with_spherical_reflection,
 };
 use clockmill::simulations::surface::fluids::lbm::d2q9::reflection::with_spherical_reflection;
 use clockmill::simulations::surface::fluids::lbm::d2q9::relaxation::RelaxationParam;
@@ -44,7 +44,7 @@ fn bench_lbm_d2q9(c: &mut Criterion) {
 
         group.bench_function(format!("{:?} isotropic collision", dtype).as_str(), |b| {
             b.iter(|| {
-                let dist_col = combined_isotropic_collision(
+                let dist_col = bgk_collision_with_spherical_reflection(
                     dist.clone(),
                     e.clone(),
                     w.clone(),

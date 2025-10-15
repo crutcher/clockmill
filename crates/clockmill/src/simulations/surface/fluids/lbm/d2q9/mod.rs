@@ -42,7 +42,7 @@ pub const C4: f64 = C2 * C2;
 
 #[cfg(test)]
 mod tests {
-    use crate::simulations::surface::fluids::lbm::d2q9::collision::combined_isotropic_collision;
+    use crate::simulations::surface::fluids::lbm::d2q9::collision::bgk_collision_with_spherical_reflection;
     use crate::simulations::surface::fluids::lbm::d2q9::relaxation::RelaxationParam;
     use crate::simulations::surface::fluids::lbm::d2q9::space::{
         dbg_dist, direction_vectors, weight_matrix,
@@ -86,7 +86,7 @@ mod tests {
                 stream_phase.clone(),
             );
 
-            let thermal_phase = combined_isotropic_collision(
+            let thermal_phase = bgk_collision_with_spherical_reflection(
                 stream_phase,
                 e.clone(),
                 w.clone(),

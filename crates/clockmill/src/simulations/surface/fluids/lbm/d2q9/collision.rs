@@ -52,7 +52,7 @@ pub fn bgk_collision<B: Backend, S: Into<OmegaSource<B>>>(
 ///
 /// # Returns
 /// - ``[H, W, VY=3, VX=3]`` distribution.
-pub fn combined_isotropic_collision<B: Backend>(
+pub fn bgk_collision_with_spherical_reflection<B: Backend>(
     dist: Tensor<B, 4>,
     e: Tensor<B, 3>,
     w: Tensor<B, 2>,
@@ -60,10 +60,11 @@ pub fn combined_isotropic_collision<B: Backend>(
     relaxation: RelaxationParam,
     correction: Option<f64>,
 ) -> Tensor<B, 4> {
-    let pre_dist = dist;
-
-    let naive_dist = bgk_collision(pre_dist.clone(), e, w, relaxation, correction);
-    reflection::with_spherical_reflection(pre_dist, naive_dist, solid_mask)
+    reflection::with_spherical_reflection(
+        dist.clone(),
+        bgk_collision(dist, e, w, relaxation, correction),
+        solid_mask,
+    )
 }
 
 #[cfg(test)]

@@ -1,6 +1,4 @@
 //! # Thermal Equilibrium
-
-use crate::compat::operations::fast_powi_2;
 use crate::simulations::surface::fluids::lbm::d2q9::{C2, C4, space};
 use burn::Tensor;
 use burn::prelude::Backend;
@@ -34,7 +32,7 @@ pub fn thermal_equilibrium<B: Backend>(
     (w.unsqueeze() * rho).mul(
         1.0
             + e_dot_u.clone() / C2
-            + fast_powi_2(e_dot_u) / (2.0 * C4)
+            + e_dot_u.square() / (2.0 * C4)
             - u_sq.unsqueeze_dims::<4>(&[2, 3]) / (2.0 * C2)
     )
 }
@@ -107,7 +105,7 @@ mod tests {
         let expected_eq = (w.unsqueeze() * rho.unsqueeze_dim(2)).mul(
             1
                 + 3.0 * e_dot_u.clone()
-                + 4.5 * fast_powi_2(e_dot_u.clone())
+                + 4.5 * e_dot_u.square()
                 - 1.5 * u_sq.unsqueeze_dims::<4>(&[2, 3])
         );
 

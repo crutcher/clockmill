@@ -1,6 +1,4 @@
 //! # Space Primitives
-
-use crate::compat::operations::fast_powi_2;
 use bimm_contracts::unpack_shape_contract;
 use burn::Tensor;
 use burn::prelude::{Backend, ElementConversion, Int};
@@ -139,7 +137,7 @@ pub fn macroscopic_velocity<B: Backend>(
 /// # Returns
 /// - ``[H, W]`` velocity magnitude squared
 pub fn velocity_squared<B: Backend>(u: Tensor<B, 3>) -> Tensor<B, 2> {
-    fast_powi_2(u).sum_dim(2).squeeze_dims::<2>(&[2])
+    u.square().sum_dim(2).squeeze_dims::<2>(&[2])
 }
 
 /// Compute the first (density) and second (macro velocity) moments.

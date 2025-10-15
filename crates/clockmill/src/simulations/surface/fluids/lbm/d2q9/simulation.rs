@@ -1,10 +1,11 @@
 #![allow(dead_code)]
 //! # LBM D2Q9 World Module
 
-use crate::simulations::surface::fluids::lbm::d2q9::operations::{
-    RelaxationParam, bgk_collision, direction_vectors, half_stream_x, half_stream_y,
-    outflow_clipping_stream, weight_matrix, with_spherical_reflection,
-};
+use crate::simulations::surface::fluids::lbm::d2q9::collision::bgk_collision;
+use crate::simulations::surface::fluids::lbm::d2q9::reflection::with_spherical_reflection;
+use crate::simulations::surface::fluids::lbm::d2q9::relaxation::RelaxationParam;
+use crate::simulations::surface::fluids::lbm::d2q9::space::{direction_vectors, weight_matrix};
+use crate::simulations::surface::fluids::lbm::d2q9::streaming::outflow_clipping_stream;
 use burn::Tensor;
 use burn::config::Config;
 use burn::module::Module;
@@ -166,55 +167,6 @@ impl<B: Backend> LBMD2Q9State<B> {
     /// Get the mass correction term.
     pub fn correction_term(&self) -> f64 {
         self.correct_total_mass / self.current_total_mass()
-    }
-
-    fn stream_left_edge(
-        &self,
-        thermal_dist: Tensor<B, 4>,
-    ) -> Tensor<B, 4> {
-        Tensor::cat(
-            vec![
-                half_stream_y(thermal_dist.clone().slice(s![.., 1, .., 0])),
-                thermal_dist.clone().slice(s![1..-1, 0, .., -2..]),
-            ],
-            3,
-        )
-    }
-    fn stream_right_edge(
-        &self,
-        thermal_dist: Tensor<B, 4>,
-    ) -> Tensor<B, 4> {
-        Tensor::cat(
-            vec![
-                thermal_dist.clone().slice(s![1..-1, -1, .., ..2]),
-                half_stream_y(thermal_dist.clone().slice(s![.., -2, .., -1])),
-            ],
-            3,
-        )
-    }
-    fn stream_top_edge(
-        &self,
-        thermal_dist: Tensor<B, 4>,
-    ) -> Tensor<B, 4> {
-        Tensor::cat(
-            vec![
-                half_stream_x(thermal_dist.clone().slice(s![1, .., 0, ..])),
-                thermal_dist.clone().slice(s![0, 1..-1, -2.., ..]),
-            ],
-            2,
-        )
-    }
-    fn stream_bottom_edge(
-        &self,
-        thermal_dist: Tensor<B, 4>,
-    ) -> Tensor<B, 4> {
-        Tensor::cat(
-            vec![
-                thermal_dist.clone().slice(s![-1, 1..-1, ..2, ..]),
-                half_stream_x(thermal_dist.clone().slice(s![-2, .., -1, ..])),
-            ],
-            2,
-        )
     }
 
     /// Advance the world simulation by one step.

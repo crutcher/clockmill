@@ -3,10 +3,13 @@ use burn::backend::Wgpu;
 use burn::prelude::{Bool, s};
 use burn::tensor::DType::{F16, F32};
 use burn::tensor::Distribution;
-use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{
-    RelaxationParam, bgk_collision, combined_isotropic_collision, direction_vectors,
-    stream_interior_windows, weight_matrix, with_spherical_reflection,
+use clockmill::simulations::surface::fluids::lbm::d2q9::collision::{
+    bgk_collision, combined_isotropic_collision,
 };
+use clockmill::simulations::surface::fluids::lbm::d2q9::reflection::with_spherical_reflection;
+use clockmill::simulations::surface::fluids::lbm::d2q9::relaxation::RelaxationParam;
+use clockmill::simulations::surface::fluids::lbm::d2q9::space::{direction_vectors, weight_matrix};
+use clockmill::simulations::surface::fluids::lbm::d2q9::streaming::stream_interior_windows;
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 

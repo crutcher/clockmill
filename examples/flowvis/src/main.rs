@@ -3,12 +3,13 @@ use burn::prelude::{Backend, Bool, ElementConversion, s};
 use burn::tensor::DType::F32;
 use clap::Parser;
 use clockmill::framework::config_parsers::parse_shape;
-use clockmill::simulations::surface::fluids::lbm::d2q9::operations::{
-    RelaxationParam, SPEED_OF_SOUND, density, direction_vectors, macroscopic_momentum,
-};
-use clockmill::simulations::surface::fluids::lbm::d2q9::world::{
+use clockmill::simulations::surface::fluids::lbm::d2q9::SPEED_OF_SOUND;
+use clockmill::simulations::surface::fluids::lbm::d2q9::relaxation::RelaxationParam;
+use clockmill::simulations::surface::fluids::lbm::d2q9::simulation::{
     LBMD2Q9Config, LBMD2Q9State, LBMMeta,
 };
+use clockmill::simulations::surface::fluids::lbm::d2q9::space::direction_vectors;
+use clockmill::simulations::surface::fluids::lbm::d2q9::space::{density, macroscopic_momentum};
 use glutin_window::GlutinWindow as Window;
 use opengl_graphics::{GlGraphics, OpenGL};
 use piston::event_loop::{EventSettings, Events};

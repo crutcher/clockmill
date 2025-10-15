@@ -94,7 +94,6 @@ fn run<B: Backend>(args: &Args) {
         .slice_fill(s![150, 50..75], true)
         .slice_fill(s![150, 100..125], true);
 
-    /*
     let prism_shape = [height / 2, width / 2];
     world_state.omega = world_state
         .omega
@@ -112,7 +111,6 @@ fn run<B: Backend>(args: &Args) {
             ],
             RelaxationParam::Tau(args.tau).as_omega_value(),
         );
-     */
 
     let mut world_state = world_state.to_dtype(dtype);
     world_state.save_correct_total_mass();

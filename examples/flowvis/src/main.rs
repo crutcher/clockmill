@@ -186,6 +186,8 @@ impl<B: Backend> Simulation<B> {
                 progress.set_message(format!("sim:{:.0}tps", avg_tps));
                 progress.tick();
 
+                let pre_update_time = std::time::Instant::now();
+
                 let dist = world.dist.clone();
 
                 let drift = width / 4;
@@ -236,8 +238,16 @@ impl<B: Backend> Simulation<B> {
                 world.advance_step();
                 *state_clone.lock().unwrap() = world.dist.clone();
 
-                if let Some(step_duration) = step_duration {
-                    thread::sleep(step_duration);
+                let post_update_time = std::time::Instant::now();
+                let update_delay = post_update_time - pre_update_time;
+
+                if let Some(step_duration) = step_duration
+                    && step_duration > update_delay
+                {
+                    let delay = step_duration - update_delay;
+                    if delay > std::time::Duration::from_secs_f32(0.0) {
+                        thread::sleep(delay);
+                    }
                 }
             }
         });

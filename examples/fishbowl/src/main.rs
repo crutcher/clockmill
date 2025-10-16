@@ -6,7 +6,6 @@ use clockmill::framework::config_parsers::parse_shape;
 use clockmill::simulations::surface::conway::{Conway, ConwayConfig};
 use color::ColorScheme;
 use glutin_window::GlutinWindow as Window;
-use indicatif::ProgressBar;
 use opengl_graphics::{GlGraphics, OpenGL};
 use piston::event_loop::{EventSettings, Events};
 use piston::input::RenderEvent;
@@ -22,7 +21,7 @@ mod sim;
 #[command(long_about = None)]
 pub struct Args {
     /// The grid shape as `HEIGHT,WIDTH`, or `SIZE`.
-    #[arg(long, value_parser=parse_shape, default_value="400,600")]
+    #[arg(long, value_parser=parse_shape, default_value="800")]
     pub grid_shape: [usize; 2],
 
     /// The number of steps to skip on init.
@@ -42,7 +41,7 @@ pub struct Args {
     pub fps: u64,
 
     /// The tics per second.
-    #[arg(long, default_value_t = 4.)]
+    #[arg(long, default_value_t = 500.)]
     pub tps: f32,
 
     /// The initial window zoom.
@@ -75,8 +74,6 @@ fn main() {
 fn run<B: Backend>(args: &Args) {
     let device = Default::default();
 
-    let progress = ProgressBar::new_spinner();
-
     let mut conway: Conway<B> = ConwayConfig::new(args.grid_shape).init(&device);
     conway.fuzz(args.initial_density);
     conway.wrap();
@@ -87,11 +84,12 @@ fn run<B: Backend>(args: &Args) {
         conway.step_no_wrap();
     }
 
-    let sim = Simulation::new(
-        conway,
-        args.update_noise,
-        std::time::Duration::from_secs_f32(1.0 / args.tps),
-    );
+    let step_duration = if args.tps == 0.0 {
+        None
+    } else {
+        Some(std::time::Duration::from_secs_f32(1.0 / args.tps))
+    };
+    let sim = Simulation::new(conway, args.update_noise, step_duration);
 
     // Change this to OpenGL::V2_1 if not working.
     let opengl = OpenGL::V3_2;
@@ -122,27 +120,8 @@ fn run<B: Backend>(args: &Args) {
     let mut events = Events::new(EventSettings::new());
     events.set_ups(args.fps);
 
-    let delay_smoothing = 20;
-    let mut avg_delay = std::time::Duration::from_secs_f32(0.0);
-    let mut last_time = std::time::Instant::now();
-
     while let Some(e) = events.next(&mut window) {
         if let Some(args) = e.render_args() {
-            {
-                let now = std::time::Instant::now();
-                let dt = now - last_time;
-                avg_delay = (avg_delay * delay_smoothing + dt) / (delay_smoothing + 1);
-                last_time = now;
-            }
-
-            let display_fps = 1.0 / avg_delay.as_secs_f32();
-
-            // TODO: get tps from the simulation.
-            // TODO #2: render info on the screen.
-
-            progress.set_message(format!("render:{:.0}fps", display_fps));
-            progress.tick();
-
             app.render(&args);
         }
     }

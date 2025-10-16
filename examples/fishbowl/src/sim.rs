@@ -1,6 +1,7 @@
 use burn::Tensor;
 use burn::prelude::{Backend, Bool};
 use clockmill::simulations::surface::conway::Conway;
+use indicatif::ProgressBar;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -16,7 +17,7 @@ impl<B: Backend> Simulation<B> {
     pub fn new(
         conway: Conway<B>,
         noise: f64,
-        step_duration: Duration,
+        step_duration: Option<Duration>,
     ) -> Self {
         let shutdown = Arc::new(AtomicBool::new(false));
         let state = Arc::new(Mutex::new(conway.state.clone()));
@@ -27,7 +28,24 @@ impl<B: Backend> Simulation<B> {
         let handle = thread::spawn(move || {
             let mut conway = conway;
 
+            let progress = ProgressBar::new_spinner();
+            let delay_smoothing = 20;
+            let mut avg_delay = std::time::Duration::from_secs_f32(0.0);
+            let mut last_time = std::time::Instant::now();
+
             while !shutdown_clone.load(Ordering::Relaxed) {
+                {
+                    let now = std::time::Instant::now();
+                    let dt = now - last_time;
+                    avg_delay = (avg_delay * delay_smoothing + dt) / (delay_smoothing + 1);
+                    last_time = now;
+                }
+                let avg_tps = 1.0 / avg_delay.as_secs_f32();
+                progress.set_message(format!("sim:{:.0}tps", avg_tps));
+                progress.tick();
+
+                let t0 = std::time::Instant::now();
+
                 // Update simulation
                 conway.fuzz(noise);
                 conway.wrap();
@@ -36,7 +54,16 @@ impl<B: Backend> Simulation<B> {
                 // Export
                 *state_clone.lock().unwrap() = conway.state.clone();
 
-                thread::sleep(step_duration);
+                let t1 = std::time::Instant::now();
+
+                let update_delay = t1.duration_since(t0);
+
+                if let Some(step_duration) = step_duration
+                    && step_duration > update_delay
+                {
+                    let sleep_duration = step_duration - update_delay;
+                    thread::sleep(sleep_duration);
+                }
             }
         });
 

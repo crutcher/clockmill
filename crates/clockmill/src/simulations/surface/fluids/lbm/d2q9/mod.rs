@@ -49,15 +49,18 @@ mod tests {
     use crate::simulations::surface::fluids::lbm::d2q9::streaming::outflow_clipping_stream;
     use burn::Tensor;
     use burn::backend::Wgpu;
-    use burn::prelude::{Bool, s};
+    use burn::prelude::{Bool, ElementConversion, s};
+    use nearly::nearly;
 
     #[test]
     fn test_debug_flow_loss() {
         type B = Wgpu;
         let device = Default::default();
 
+        let k = 5;
         let height = 6;
         let width = 6;
+        let debug = false;
 
         let solid_mask: Tensor<B, 2, Bool> = Tensor::full([height, width], false, &device)
             .slice_fill(s![0, ..], true)
@@ -70,19 +73,25 @@ mod tests {
             .slice_fill(s![1, 1, 1, 1], 3.0)
             .slice_fill(s![1, -2, 1, 1], 5.0)
             .slice_fill(s![-2, -2, 1, 1], 10.0);
-        dbg_dist("dist_t0", dist_t0.clone());
+
+        if debug {
+            dbg_dist("dist_t0", dist_t0.clone());
+        }
+
+        let initial_energy: f64 = dist_t0.clone().sum().into_scalar().elem();
 
         let lbm_tables = space::LbmTables::init(&device);
 
         let mut current = dist_t0.clone();
 
-        let k = 100;
         for t_idx in 1..=k {
             let stream_phase = outflow_clipping_stream(current);
-            dbg_dist(
-                format!("stream {t_idx}").to_string().as_str(),
-                stream_phase.clone(),
-            );
+            if debug {
+                dbg_dist(
+                    format!("stream {t_idx}").to_string().as_str(),
+                    stream_phase.clone(),
+                );
+            }
 
             let thermal_phase = bgk_collision_with_spherical_reflection(
                 stream_phase,
@@ -91,12 +100,17 @@ mod tests {
                 None,
                 &lbm_tables,
             );
-            dbg_dist(
-                format!("thermal {t_idx}").to_string().as_str(),
-                thermal_phase.clone(),
-            );
+            if debug {
+                dbg_dist(
+                    format!("thermal {t_idx}").to_string().as_str(),
+                    thermal_phase.clone(),
+                );
+            }
 
             current = thermal_phase;
+            let current_energy: f64 = dist_t0.clone().sum().into_scalar().elem();
+
+            assert!(nearly!(initial_energy == current_energy));
         }
     }
 }

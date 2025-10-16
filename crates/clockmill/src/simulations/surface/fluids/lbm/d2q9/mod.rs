@@ -85,7 +85,14 @@ mod tests {
         let mut current = dist_t0.clone();
 
         for t_idx in 1..=k {
-            let stream_phase = outflow_clipping_stream(current);
+            let stream_phase = outflow_clipping_stream(current.clone());
+            if debug {
+                dbg_dist(
+                    format!("stream {t_idx}").to_string().as_str(),
+                    stream_phase.clone(),
+                );
+            }
+
             if debug {
                 dbg_dist(
                     format!("stream {t_idx}").to_string().as_str(),

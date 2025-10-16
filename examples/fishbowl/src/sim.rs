@@ -1,6 +1,6 @@
 use burn::Tensor;
 use burn::prelude::{Backend, Bool};
-use clockmill::simulations::surface::conway::Conway;
+use clockmill::simulations::surface::conway::life2d::ConwayLife2DState;
 use indicatif::ProgressBar;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -15,7 +15,7 @@ pub struct Simulation<B: Backend> {
 
 impl<B: Backend> Simulation<B> {
     pub fn new(
-        conway: Conway<B>,
+        conway: ConwayLife2DState<B>,
         noise: f64,
         step_duration: Option<Duration>,
     ) -> Self {

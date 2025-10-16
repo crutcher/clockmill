@@ -1,6 +1,6 @@
 use burn::prelude::Backend;
 use clap::Parser;
-use clockmill::simulations::surface::conway::{Conway, ConwayConfig};
+use clockmill::simulations::surface::conway::life2d::{ConwayLife2DConfig, ConwayLife2DState};
 use indicatif::ProgressBar;
 use std::time::Instant;
 
@@ -48,7 +48,7 @@ fn run<B: Backend>(args: &Args) {
 
     let warmup = args.steps / args.warmup_fraction;
 
-    let mut conway: Conway<B> = ConwayConfig {
+    let mut conway: ConwayLife2DState<B> = ConwayLife2DConfig {
         shape: [args.grid_size, args.grid_size],
     }
     .init(&device);
@@ -65,6 +65,7 @@ fn run<B: Backend>(args: &Args) {
         if step == warmup {
             t0 = Instant::now();
         }
+        conway.wrap();
         conway.step_no_wrap();
 
         if let Some(bar) = &bar {

@@ -3,7 +3,7 @@ use app::FishbowlApp;
 use burn::prelude::Backend;
 use clap::Parser;
 use clockmill::framework::config_parsers::parse_shape;
-use clockmill::simulations::surface::conway::{Conway, ConwayConfig};
+use clockmill::simulations::surface::conway::life2d::{ConwayLife2DConfig, ConwayLife2DState};
 use color::ColorScheme;
 use glutin_window::GlutinWindow as Window;
 use opengl_graphics::{GlGraphics, OpenGL};
@@ -74,7 +74,7 @@ fn main() {
 fn run<B: Backend>(args: &Args) {
     let device = Default::default();
 
-    let mut conway: Conway<B> = ConwayConfig::new(args.grid_shape).init(&device);
+    let mut conway: ConwayLife2DState<B> = ConwayLife2DConfig::new(args.grid_shape).init(&device);
     conway.fuzz(args.initial_density);
     conway.wrap();
     conway.step_no_wrap();

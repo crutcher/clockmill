@@ -183,7 +183,7 @@ impl<B: Backend> LBMD2Q9State<B> {
             bgk_collision(
                 stream_phase.clone(),
                 self.omega.clone(),
-                None,
+                Some(self.correction_term()),
                 &self.lbm_tables,
             ),
             solid_mask,

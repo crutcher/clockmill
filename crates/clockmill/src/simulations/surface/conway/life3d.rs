@@ -89,7 +89,6 @@ pub fn next_state_wrapped_3d<B: Backend>(
 ///
 /// # Returns
 /// - the ``[H-2, W-2, Z-2]`` evolved interior state.
-#[allow(unused)]
 fn next_interior_3d<B: Backend>(
     state: Tensor<B, 3, Bool>,
     rules: &LifeRules,
@@ -161,7 +160,6 @@ impl Default for LifeRules {
         }
     }
 }
-
 
 /// Config for [`ConwayLife3DState`]
 #[derive(Config, Debug)]

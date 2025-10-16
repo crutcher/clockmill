@@ -1,9 +1,11 @@
 use burn::prelude::{Backend, s};
 use clap::Parser;
 use clockmill::simulations::surface::conway::life2d::{ConwayLife2DConfig, ConwayLife2DState};
+use clockmill::simulations::surface::conway::life3d::{
+    ConwayLife3DConfig, ConwayLife3DState, LifeRules,
+};
 use indicatif::ProgressBar;
 use std::time::Instant;
-use clockmill::simulations::surface::conway::life3d::{ConwayLife3DConfig, ConwayLife3DState, LifeRules};
 
 /// Conway's Game of Life demo for Burn.
 #[derive(Parser, Debug)]
@@ -32,7 +34,6 @@ pub struct Args {
     /// Show progress bar.
     #[arg(short, long, default_value_t = false)]
     pub progress: bool,
-
 }
 
 fn main() {
@@ -65,7 +66,7 @@ fn run2d<B: Backend>(args: &Args) {
     let mut conway: ConwayLife2DState<B> = ConwayLife2DConfig {
         shape: [args.grid_size, args.grid_size],
     }
-        .init(&device);
+    .init(&device);
     conway.fuzz(0.2);
 
     let mut t0: Instant = Instant::now();
@@ -106,7 +107,7 @@ fn run3d<B: Backend>(args: &Args) {
         shape: [args.grid_size, args.grid_size, args.grid_size],
         rules: LifeRules::default(),
     }
-        .init(&device);
+    .init(&device);
     conway.fuzz(0.2);
 
     let mut t0: Instant = Instant::now();

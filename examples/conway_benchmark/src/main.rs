@@ -23,10 +23,6 @@ pub struct Args {
     #[arg(long, default_value = "100")]
     pub grid_size: usize,
 
-    /// Use `Tensor::unfold()` views.
-    #[arg(long, default_value = "false")]
-    pub unfold_views: bool,
-
     /// The fraction of steps to use for warmup.
     #[arg(long, default_value_t = 10)]
     pub warmup_fraction: usize,

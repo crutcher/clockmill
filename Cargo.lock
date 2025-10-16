@@ -1714,7 +1714,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "conway_speedtest"
+name = "conway_benchmark"
 version = "0.0.0"
 dependencies = [
  "burn 0.19.0",

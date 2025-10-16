@@ -1,5 +1,5 @@
 [package]
-name = "conway_speedtest"
+name = "conway_benchmark"
 publish = false
 edition.workspace = true
 rust-version.workspace = true

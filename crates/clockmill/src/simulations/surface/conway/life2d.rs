@@ -1,10 +1,184 @@
 //! # 2D Conway's Game of Life
 
-use crate::convolve::surface::convolve_func_2d;
 use burn::Tensor;
 use burn::config::Config;
 use burn::prelude::{Backend, Bool, Int, SliceArg, ToElement, s};
 use burn::tensor::{Distribution, Slice};
+
+/// Fuzz the state.
+///
+/// Flips bits with probability `density`.
+///
+/// # Arguments
+///
+/// - `state`: the ``[H, W]`` input state.
+/// - `density`: the probability of flipping a given bit.
+///
+/// # Returns
+/// - the fuzzed ``[H, W]`` state.
+pub fn fuzz_state_2d<B: Backend>(
+    state: Tensor<B, 2, Bool>,
+    density: f64,
+) -> Tensor<B, 2, Bool> {
+    if density == 0.0 {
+        return state;
+    }
+
+    let noise: Tensor<B, 2, Bool> = Tensor::<B, 2>::random(
+        state.shape(),
+        Distribution::Bernoulli(density),
+        &state.device(),
+    )
+    .equal_elem(1.0);
+
+    state.bool_xor(noise)
+}
+
+/// Wrap the board state.
+///
+/// This simulates a toroidal space by copying the penultimate rows and columns
+/// to the edges of the opposite sides.
+pub fn wrap_state_2d<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
+    let top = state.clone().slice(s![1, ..]);
+    let bottom = state.clone().slice(s![-2, ..]);
+    let left = state.clone().slice(s![.., 1]);
+    let right = state.clone().slice(s![.., -2]);
+
+    state
+        .slice_assign(s![0, ..], bottom)
+        .slice_assign(s![-1, ..], top)
+        .slice_assign(s![.., 0], right)
+        .slice_assign(s![.., -1], left)
+}
+
+/// Expand a tensor by copying the wrap compliment edges.
+pub fn wrap_pad_2d<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
+    let top = state.clone().slice(s![0, ..]);
+    let bottom = state.clone().slice(s![-1, ..]);
+
+    let left = state.clone().slice(s![.., 0]);
+    let right = state.clone().slice(s![.., -1]);
+    let middle = Tensor::cat(vec![left, state, right], 1);
+
+    // cross-pad the corners.
+    let top = Tensor::cat(
+        vec![
+            top.clone().slice_dim(1, s![-1]),
+            top.clone(),
+            top.slice_dim(1, s![0]),
+        ],
+        1,
+    );
+    let bottom = Tensor::cat(
+        vec![
+            bottom.clone().slice_dim(1, s![-1]),
+            bottom.clone(),
+            bottom.slice_dim(1, s![0]),
+        ],
+        1,
+    );
+
+    Tensor::cat(vec![top, middle, bottom], 0)
+}
+
+fn slice_size(slice: &Slice) -> usize {
+    (slice.end.unwrap() - slice.start) as usize
+}
+
+fn slices_shape(slices: &[Slice; 2]) -> [usize; 2] {
+    [slice_size(&slices[0]), slice_size(&slices[1])]
+}
+
+fn read_2d_slice<B: Backend, R>(
+    state: Tensor<B, 2, Bool>,
+    ranges: R,
+) -> Vec<Vec<bool>>
+where
+    R: SliceArg<2>,
+{
+    let slices = ranges.into_slices(state.shape());
+    let [h, w] = slices_shape(&slices);
+
+    let block_data = state.clone().slice(slices).to_data();
+    let block_slice = block_data.as_slice::<B::BoolElem>().unwrap();
+
+    let mut result = Vec::with_capacity(h);
+    for hidx in 0..h {
+        let start = hidx * w;
+
+        result.push(
+            block_slice[start..start + w]
+                .iter()
+                .map(|&cell| cell.to_bool())
+                .collect(),
+        )
+    }
+
+    result
+}
+
+/// Return the next board.
+///
+/// # Arguments
+///
+/// - `state`: a ``[H, W]`` game state.
+///
+/// # Returns
+/// - the ``[H, W]`` evolved interior state, with wrapped edges.
+pub fn next_state_wrapped_2d<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
+    let update = next_interior_2d(state.clone());
+
+    // There's a *significant* performance speedup (+60%) from re-using the state,
+    // rather than building a new state with pad-expansion.
+    // This appears to mainly be a result of backend optimizations.
+    let state = state.slice_assign(s![1..-1, 1..-1], update);
+
+    wrap_state_2d(state)
+}
+
+/// Return the interior board next-state.
+///
+/// # Arguments
+/// - `state`: a ``[H, W]`` game state.
+///
+/// # Returns
+/// - the ``[H-2, W-2]`` evolved interior state.
+pub fn next_interior_2d<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
+    #[cfg(debug_assertions)]
+    let [h, w] = bimm_contracts::unpack_shape_contract!(["h", "w"], &state.dims(),);
+
+    // [H, W]
+    let is_live = state.clone().slice(s![1..-1, 1..-1,]);
+
+    // All int conversions should descend from this.
+    let int_state = state.clone().int(); // .cast(U8);
+
+    // [H, W]
+    let self_count = int_state.clone().slice(s![1..-1, 1..-1]);
+
+    // [H, W, 3]
+    let windows: Tensor<B, 4, Int> = int_state.unfold::<3, _>(0, 3, 1).unfold::<4, _>(1, 3, 1);
+
+    // [H, W]
+    let window_count = windows.sum_dims(&[2, 3]).squeeze_dims::<2>(&[2, 3]);
+
+    // [H, W]
+    let neighbor_count = window_count - self_count;
+
+    let is_2 = neighbor_count.clone().equal_elem(2);
+    let is_3 = neighbor_count.clone().equal_elem(3);
+
+    let inner = is_2.bool_and(is_live).bool_or(is_3);
+
+    #[cfg(debug_assertions)]
+    bimm_contracts::assert_shape_contract_periodically!(
+        ["h" - "pad", "w" - "pad"],
+        &inner.dims(),
+        &[("h", h), ("w", w), ("pad", 2)],
+    );
+
+    inner
+}
 
 /// Config for [`ConwayLife2DState`]
 #[derive(Config, Debug)]
@@ -51,57 +225,16 @@ impl<B: Backend> ConwayLife2DState<B> {
         &mut self,
         density: f64,
     ) {
-        if density == 0.0 {
-            return;
-        }
-
-        let noise: Tensor<B, 2, Bool> = Tensor::<B, 2>::random(
-            self.shape(),
-            Distribution::Bernoulli(density),
-            &self.device(),
-        )
-        .equal_elem(1.0);
-
-        self.state = self.state.clone().bool_or(noise);
+        self.state = fuzz_state_2d(self.state.clone(), density);
     }
 
-    /// Wrap the board state.
+    /// Advance one step.
     ///
-    /// This simulates a toroidal space by copying the penultimate rows and columns
-    /// to the edges of the opposite sides.
-    pub fn wrap(&mut self) {
-        let state = self.state.clone();
-
-        let bottom = state.clone().slice(s![-2, ..]);
-        let top = state.clone().slice(s![1, ..]);
-        let right = state.clone().slice(s![1..-1, -2]);
-        let left = state.clone().slice(s![1..-1, 1]);
-
-        self.state = state
-            .clone()
-            .slice_assign(s![0, ..], top)
-            .slice_assign(s![-1, ..], bottom)
-            .slice_assign(s![1..-1, 0], left)
-            .slice_assign(s![1..-1, -1], right);
-    }
-
-    /// Advance the board state by one step; without applying wrapping.
-    pub fn step_no_wrap(&mut self) {
+    /// Wraps edges.
+    pub fn step(&mut self) {
         self.previous = Some(self.state.clone());
-        self.state = next_inner(self.state.clone());
-    }
 
-    /// Read a slice of the previous board state.
-    pub fn read_previous_slice<R>(
-        &self,
-        ranges: R,
-    ) -> Option<Vec<Vec<bool>>>
-    where
-        R: SliceArg<2>,
-    {
-        self.previous
-            .as_ref()
-            .map(|previous| read_2d_slice(previous.clone(), ranges))
+        self.state = next_state_wrapped_2d(self.state.clone())
     }
 
     /// Read a slice of the current board state.
@@ -145,137 +278,31 @@ impl<B: Backend> ConwayLife2DState<B> {
     }
 }
 
-fn slice_size(slice: &Slice) -> usize {
-    (slice.end.unwrap() - slice.start) as usize
-}
-
-fn slices_shape(slices: &[Slice; 2]) -> [usize; 2] {
-    [slice_size(&slices[0]), slice_size(&slices[1])]
-}
-
-fn read_2d_slice<B: Backend, R>(
-    state: Tensor<B, 2, Bool>,
-    ranges: R,
-) -> Vec<Vec<bool>>
-where
-    R: SliceArg<2>,
-{
-    let slices = ranges.into_slices(state.shape());
-    let [h, w] = slices_shape(&slices);
-
-    let block_data = state.clone().slice(slices).to_data();
-    let block_slice = block_data.as_slice::<B::BoolElem>().unwrap();
-
-    let mut result = Vec::with_capacity(h);
-    for hidx in 0..h {
-        let start = hidx * w;
-
-        result.push(
-            block_slice[start..start + w]
-                .iter()
-                .map(|&cell| cell.to_bool())
-                .collect(),
-        )
-    }
-
-    result
-}
-
-fn next_inner<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
-    fn f<B: Backend>(blocks: Tensor<B, 6, Bool>) -> Tensor<B, 4, Bool> {
-        #[cfg(debug_assertions)]
-        let [batch, h_win, w_win] = bimm_contracts::unpack_shape_contract!(
-            ["batch", "h_win", "w_win", "c_in", "k", "k"],
-            &blocks.shape().dims,
-            &["batch", "h_win", "w_win"],
-            &[("c_in", 1), ("k", 3)],
-        );
-
-        let blocks: Tensor<B, 5, Bool> = blocks.squeeze_dim::<5>(3);
-        #[cfg(debug_assertions)]
-        bimm_contracts::assert_shape_contract_periodically!(
-            ["batch", "h_win", "w_win", "k", "k"],
-            &blocks.shape().dims,
-            &[
-                ("batch", batch),
-                ("h_win", h_win),
-                ("w_win", w_win),
-                ("k", 3)
-            ],
-        );
-
-        let live: Tensor<B, 3, Bool> = blocks
-            .clone()
-            .slice(s![.., .., .., 1, 1])
-            .squeeze_dims::<3>(&[-1, -2]);
-        #[cfg(debug_assertions)]
-        bimm_contracts::assert_shape_contract_periodically!(
-            ["batch", "h_win", "w_win"],
-            &live.shape().dims,
-            &[("batch", batch), ("h_win", h_win), ("w_win", w_win)],
-        );
-
-        let count: Tensor<B, 3, Int> = blocks
-            .int()
-            .sum_dim(3)
-            .sum_dim(4)
-            .squeeze_dims::<3>(&[-1, -2]);
-
-        #[cfg(debug_assertions)]
-        bimm_contracts::assert_shape_contract_periodically!(
-            ["batch", "h_win", "w_win"],
-            &count.shape().dims,
-            &[("batch", batch), ("h_win", h_win), ("w_win", w_win)],
-        );
-
-        let threes = count.clone().equal_elem(3);
-        let fours = count.equal_elem(4);
-
-        let update = threes.bool_or(fours.bool_and(live));
-
-        #[cfg(debug_assertions)]
-        bimm_contracts::assert_shape_contract_periodically!(
-            ["batch", "h_win", "w_win"],
-            &update.shape().dims,
-            &[("batch", batch), ("h_win", h_win), ("w_win", w_win)],
-        );
-
-        update.unsqueeze_dim::<4>(3)
-    }
-
-    #[cfg(debug_assertions)]
-    let [height, width] =
-        bimm_contracts::unpack_shape_contract!(["height", "width"], &state.shape().dims);
-
-    let batch_state = state.clone().unsqueeze_dims::<4>(&[0, 0]);
-
-    let conv_out = convolve_func_2d(batch_state, f, [3, 3], [1, 1]);
-
-    #[cfg(debug_assertions)]
-    bimm_contracts::assert_shape_contract_periodically!(
-        ["batch", "c_out", "h_wins", "w_wins"],
-        &conv_out.shape().dims,
-        &[
-            ("batch", 1),
-            ("c_out", 1),
-            ("h_wins", height - 2),
-            ("w_wins", width - 2)
-        ],
-    );
-
-    let update = conv_out.squeeze_dims::<2>(&[0, 1]);
-
-    state.slice_assign(s![1..-1, 1..-1], update)
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::simulations::surface::conway::life2d::{
-        ConwayLife2DConfig, ConwayLife2DState, next_inner,
-    };
+    use super::*;
     use burn::backend::Wgpu;
     use burn::prelude::s;
     use burn::tensor::TensorData;
+
+    #[test]
+    fn test_smoke() {
+        type B = Wgpu;
+        let device = Default::default();
+
+        let steps = 100;
+        let grid_size = 20;
+
+        let config = ConwayLife2DConfig {
+            shape: [grid_size, grid_size],
+        };
+        let mut game: ConwayLife2DState<B> = config.init(&device);
+        game.fuzz(0.05);
+
+        for _ in 0..steps {
+            game.step();
+        }
+    }
 
     #[test]
     fn test_logic() {
@@ -297,13 +324,11 @@ mod tests {
             vec![vec![true, true], vec![true, false]]
         );
 
-        next_inner(conway.state.clone()).to_data().assert_eq(
+        next_interior_2d(conway.state.clone()).to_data().assert_eq(
             &TensorData::from([
-                [false, false, false, false, false],
-                [false, true, true, false, false],
-                [false, true, true, false, false],
-                [false, false, false, true, true],
-                [false, false, false, true, true],
+                [true, true, false],
+                [true, true, false],
+                [false, false, true],
             ]),
             false,
         )

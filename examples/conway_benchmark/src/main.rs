@@ -1,8 +1,9 @@
-use burn::prelude::Backend;
+use burn::prelude::{Backend, s};
 use clap::Parser;
 use clockmill::simulations::surface::conway::life2d::{ConwayLife2DConfig, ConwayLife2DState};
 use indicatif::ProgressBar;
 use std::time::Instant;
+use clockmill::simulations::surface::conway::life3d::{ConwayLife3DConfig, ConwayLife3DState, LifeRules};
 
 /// Conway's Game of Life demo for Burn.
 #[derive(Parser, Debug)]
@@ -12,8 +13,12 @@ pub struct Args {
     #[arg(long, default_value = "1000")]
     pub steps: usize,
 
+    /// The number of dimensions.
+    #[arg(long, default_value_t = 2)]
+    pub dims: usize,
+
     /// The width and height of the grid.
-    #[arg(long, default_value = "1000")]
+    #[arg(long, default_value = "100")]
     pub grid_size: usize,
 
     /// Use `Tensor::unfold()` views.
@@ -27,6 +32,7 @@ pub struct Args {
     /// Show progress bar.
     #[arg(short, long, default_value_t = false)]
     pub progress: bool,
+
 }
 
 fn main() {
@@ -44,6 +50,14 @@ fn main() {
 }
 
 fn run<B: Backend>(args: &Args) {
+    match args.dims {
+        2 => run2d::<B>(args),
+        3 => run3d::<B>(args),
+        _ => panic!("unsupported dims"),
+    }
+}
+
+fn run2d<B: Backend>(args: &Args) {
     let device = Default::default();
 
     let warmup = args.steps / args.warmup_fraction;
@@ -51,7 +65,7 @@ fn run<B: Backend>(args: &Args) {
     let mut conway: ConwayLife2DState<B> = ConwayLife2DConfig {
         shape: [args.grid_size, args.grid_size],
     }
-    .init(&device);
+        .init(&device);
     conway.fuzz(0.2);
 
     let mut t0: Instant = Instant::now();
@@ -65,13 +79,56 @@ fn run<B: Backend>(args: &Args) {
         if step == warmup {
             t0 = Instant::now();
         }
-        conway.wrap();
-        conway.step_no_wrap();
+        conway.step();
 
         if let Some(bar) = &bar {
             bar.inc(1);
         }
     }
+    // Force final observation.
+    conway.state.clone().slice(s![0, 0]).into_scalar();
+
+    let t1: Instant = Instant::now();
+    if let Some(bar) = &bar {
+        bar.finish();
+    }
+
+    let step_rate = (args.steps - warmup) as f64 / (t1 - t0).as_secs_f64();
+    println!("{:.2} steps/sec", step_rate);
+}
+
+fn run3d<B: Backend>(args: &Args) {
+    let device = Default::default();
+
+    let warmup = args.steps / args.warmup_fraction;
+
+    let mut conway: ConwayLife3DState<B> = ConwayLife3DConfig {
+        shape: [args.grid_size, args.grid_size, args.grid_size],
+        rules: LifeRules::default(),
+    }
+        .init(&device);
+    conway.fuzz(0.2);
+
+    let mut t0: Instant = Instant::now();
+    let bar = if args.progress {
+        Some(ProgressBar::new(args.steps as u64))
+    } else {
+        None
+    };
+
+    for step in 0..args.steps {
+        if step == warmup {
+            t0 = Instant::now();
+        }
+        conway.step();
+
+        if let Some(bar) = &bar {
+            bar.inc(1);
+        }
+    }
+    // Force final observation.
+    conway.state.clone().slice(s![0, 0, 0]).into_scalar();
+
     let t1: Instant = Instant::now();
     if let Some(bar) = &bar {
         bar.finish();

@@ -48,8 +48,7 @@ impl<B: Backend> Simulation<B> {
 
                 // Update simulation
                 conway.fuzz(noise);
-                conway.wrap();
-                conway.step_no_wrap();
+                conway.step();
 
                 // Export
                 *state_clone.lock().unwrap() = conway.state.clone();

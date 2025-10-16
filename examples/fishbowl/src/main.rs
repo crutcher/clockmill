@@ -76,12 +76,11 @@ fn run<B: Backend>(args: &Args) {
 
     let mut conway: ConwayLife2DState<B> = ConwayLife2DConfig::new(args.grid_shape).init(&device);
     conway.fuzz(args.initial_density);
-    conway.wrap();
-    conway.step_no_wrap();
+    conway.step();
+
     for _ in 0..args.init_skip_steps {
         conway.fuzz(args.update_noise);
-        conway.wrap();
-        conway.step_no_wrap();
+        conway.step();
     }
 
     let step_duration = if args.tps == 0.0 {

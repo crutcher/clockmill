@@ -1,5 +1,7 @@
 //! # Compat Mechanisms for upcoming Burn API Changes
+pub mod data_view;
 pub mod operations;
+pub mod shape;
 
 /// `1.0 / (3.0).sqrt()`
 /// TODO: unstable feature: `f64::FRAC_1_SQRT_3`

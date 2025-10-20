@@ -112,7 +112,7 @@ fn run<B: Backend>(args: &Args) {
     } else {
         None
     };
-    let sim = Simulation::new(world_state, sim_delay);
+    let sim = Simulation::new(world_state, sim_delay, |_, _| {});
 
     // Create a Glutin window.
     let mut window: Window = WindowSettings::new(
@@ -156,6 +156,7 @@ impl<B: Backend> Simulation<B> {
     pub fn new(
         world: LBMD2Q9State<B>,
         step_duration: Option<Duration>,
+        observer: fn(usize, Tensor<B, 4>) -> (),
     ) -> Self {
         let shutdown = Arc::new(AtomicBool::new(false));
         let state = Arc::new(Mutex::new(world.dist.clone()));
@@ -237,6 +238,7 @@ impl<B: Backend> Simulation<B> {
                 // Export
                 world.advance_step();
                 *state_clone.lock().unwrap() = world.dist.clone();
+                (observer)(world.step_count as usize, world.dist.clone());
 
                 let post_update_time = std::time::Instant::now();
                 let update_delay = post_update_time - pre_update_time;

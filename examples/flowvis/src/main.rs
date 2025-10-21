@@ -1,7 +1,8 @@
 use burn::Tensor;
-use burn::prelude::{Backend, Bool, ElementConversion, s};
+use burn::prelude::{Backend, Bool, ElementConversion, TensorData, s};
 use burn::tensor::DType::F32;
 use clap::Parser;
+use clockmill::compat::data_view::TensorDataIndexView;
 use clockmill::framework::config_parsers::parse_shape;
 use clockmill::simulations::surface::fluids::lbm::d2q9::SPEED_OF_SOUND;
 use clockmill::simulations::surface::fluids::lbm::d2q9::relaxation::RelaxationParam;
@@ -9,7 +10,7 @@ use clockmill::simulations::surface::fluids::lbm::d2q9::simulation::{
     LBMD2Q9Config, LBMD2Q9State, LBMMeta,
 };
 use clockmill::simulations::surface::fluids::lbm::d2q9::space::LbmTables;
-use clockmill::simulations::surface::fluids::lbm::d2q9::space::{density, macroscopic_momentum};
+use clockmill::simulations::surface::fluids::lbm::d2q9::space::macroscopic_momentum;
 use glutin_window::GlutinWindow as Window;
 use indicatif::ProgressBar;
 use opengl_graphics::{GlGraphics, OpenGL};
@@ -24,12 +25,12 @@ use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-/// Conway's Game of Life demo for Burn.
+/// Fluid Flow demo for Burn.
 #[derive(Parser, Debug)]
 #[command(long_about = None)]
 pub struct Args {
     /// The grid shape as `HEIGHT,WIDTH`, or `SIZE`.
-    #[arg(long, value_parser=parse_shape, default_value="250")]
+    #[arg(long, value_parser=parse_shape, default_value="800")]
     pub grid_shape: [usize; 2],
 
     /// The max frames per second.
@@ -37,15 +38,15 @@ pub struct Args {
     pub fps: u64,
 
     /// The tics per second.
-    #[arg(long, default_value_t = 150.0)]
+    #[arg(long, default_value_t = 0.0)]
     pub tps: f32,
 
     /// The initial window zoom.
-    #[arg(long, default_value_t = 2.5)]
+    #[arg(long, default_value_t = 1.5)]
     pub zoom: f64,
 
     /// The display opacity of updates.
-    #[arg(long, default_value_t = 1.0)]
+    #[arg(long, default_value_t = 0.8)]
     pub opacity: f32,
 
     /// The number of steps to skip on init.
@@ -91,12 +92,17 @@ fn run<B: Backend>(args: &Args) {
         .slice_fill(s![50, 20, 1, 1], 5.0 * background_density)
         .slice_fill(s![20, 100, 1, 1], 5.0 * background_density);
 
+    let h6 = (height / 6) as isize;
+    let w6 = (width / 6) as isize;
+    let stroke = (height / 20) as isize;
+
     world_state.solid_mask = world_state
         .solid_mask
-        .slice_fill(s![30, 40..60], true)
-        .slice_fill(s![125, 75..150], true)
-        .slice_fill(s![150, 50..75], true)
-        .slice_fill(s![150, 100..125], true);
+        .slice_fill(s![2 * h6..2*h6 + stroke, w6..3 *w6], true)
+        .slice_fill(s![2 * h6..2*h6 + stroke, -2 *w6..-w6], true)
+        .slice_fill(s![-h6..-h6 + stroke, w6..2 *w6], true)
+        .slice_fill(s![-h6..-h6 + stroke, -3 *w6..-w6], true)
+    ;
 
     let mut world_state = world_state.to_dtype(dtype);
     world_state.save_correct_total_mass();
@@ -112,7 +118,33 @@ fn run<B: Backend>(args: &Args) {
     } else {
         None
     };
-    let sim = Simulation::new(world_state, sim_delay, |_, _| {});
+
+    let vis_cells: Arc<Mutex<TensorData>> =
+        Arc::new(Mutex::new(TensorData::zeros::<f32, _>([height, width, 2])));
+    let vis_cells_publish = vis_cells.clone();
+    let constants: LbmTables<B> = LbmTables::for_dist(&world_state.dist);
+
+    let mut last_export = std::time::Instant::now();
+    let export_delay = Duration::from_secs_f32(1.0 / args.fps as f32);
+
+    let sim = Simulation::new(world_state, sim_delay, move |_step_index, state| {
+        let now = std::time::Instant::now();
+        let dt = now - last_export;
+
+        if dt > export_delay {
+            let cells = macroscopic_momentum(state.clone(), constants.e_vec());
+
+            // let scale = cells.clone().max().into_scalar();
+            let scale = SPEED_OF_SOUND / 1000.0;
+
+            let cells = ((cells / scale) + 1.0) / 2.0;
+            // let cells = cells.mul_scalar(std::f64::consts::PI / 2.0).sin();
+
+            *vis_cells_publish.lock().unwrap() = cells.cast(F32).to_data().convert::<f32>();
+
+            last_export = std::time::Instant::now();
+        }
+    });
 
     // Create a Glutin window.
     let mut window: Window = WindowSettings::new(
@@ -129,8 +161,8 @@ fn run<B: Backend>(args: &Args) {
     // Create a new game and run it.
     let mut app = FlowVisApp {
         gl: GlGraphics::new(opengl),
-        state_handle: sim.state.clone(),
-        solid_mask,
+        cell_data: vis_cells,
+        solid_mask: solid_mask.to_data().convert::<bool>(),
         opacity: args.opacity,
     };
 
@@ -146,24 +178,24 @@ fn run<B: Backend>(args: &Args) {
     sim.shutdown();
 }
 
-pub struct Simulation<B: Backend> {
+pub struct Simulation {
     handle: Option<JoinHandle<()>>,
     shutdown: Arc<AtomicBool>,
-    pub state: Arc<Mutex<Tensor<B, 4>>>,
 }
 
-impl<B: Backend> Simulation<B> {
-    pub fn new(
+impl Simulation {
+    pub fn new<B: Backend, F>(
         world: LBMD2Q9State<B>,
         step_duration: Option<Duration>,
-        observer: fn(usize, Tensor<B, 4>) -> (),
-    ) -> Self {
+        mut observer: F,
+    ) -> Self
+    where
+        F: FnMut(usize, Tensor<B, 4>) + Send + 'static,
+    {
         let shutdown = Arc::new(AtomicBool::new(false));
-        let state = Arc::new(Mutex::new(world.dist.clone()));
         let [height, width] = world.shape();
 
         let shutdown_clone = shutdown.clone();
-        let state_clone = state.clone();
 
         let handle = thread::spawn(move || {
             let progress = ProgressBar::new_spinner();
@@ -237,7 +269,6 @@ impl<B: Backend> Simulation<B> {
 
                 // Export
                 world.advance_step();
-                *state_clone.lock().unwrap() = world.dist.clone();
                 (observer)(world.step_count as usize, world.dist.clone());
 
                 let post_update_time = std::time::Instant::now();
@@ -257,7 +288,6 @@ impl<B: Backend> Simulation<B> {
         Simulation {
             handle: Some(handle),
             shutdown,
-            state,
         }
     }
     pub fn shutdown(mut self) {
@@ -268,71 +298,16 @@ impl<B: Backend> Simulation<B> {
     }
 }
 
-pub struct FlowVisApp<B: Backend> {
+pub struct FlowVisApp {
     pub gl: GlGraphics, // OpenGL drawing backend.
-    pub state_handle: Arc<Mutex<Tensor<B, 4>>>,
-    pub solid_mask: Tensor<B, 2, Bool>,
+    pub cell_data: Arc<Mutex<TensorData>>,
+    pub solid_mask: TensorData,
     pub opacity: f32,
 }
 
-impl<B: Backend> FlowVisApp<B> {
-    pub fn get_world_shape(&self) -> [usize; 2] {
-        self.solid_mask.shape().dims()
-    }
-
-    pub fn get_state(&self) -> Tensor<B, 4> {
-        let lock = self.state_handle.lock();
-        lock.unwrap().clone()
-    }
-
-    pub fn vis_cells(&self) -> Vec<Vec<(f32, f32)>> {
-        let [height, width] = self.get_world_shape();
-        let state = self.get_state();
-
-        let constants: LbmTables<B> = LbmTables::for_dist(&state);
-
-        // let (_rho, u) = moments(dist.clone(), e.clone());
-        // let cells = fast_powi_2(u);
-        let cells = macroscopic_momentum(state.clone(), constants.e_vec());
-
-        // let scale = cells.clone().max().into_scalar();
-        let scale = SPEED_OF_SOUND / 1000.0;
-
-        let cells = ((cells / scale) + 1.0) / 2.0;
-        // let cells = cells.mul_scalar(std::f64::consts::PI / 2.0).sin();
-
-        let cells = cells.cast(F32).to_data().into_vec::<f32>().unwrap();
-        assert_eq!(cells.len(), height * width * 2);
-
-        let mut result = vec![vec![(0.0, 0.0); width]; height];
-        for h in 0..height {
-            for w in 0..width {
-                let vy: f32 = cells[h * width * 2 + w * 2];
-                let vx: f32 = cells[h * width * 2 + w * 2 + 1];
-
-                result[h][w] = (vy, vx);
-            }
-        }
-        result
-    }
-
-    pub fn solid_cells(&self) -> Vec<Vec<bool>> {
-        let [height, width] = self.get_world_shape();
-
-        let cells = self
-            .solid_mask
-            .clone()
-            .int()
-            .to_data()
-            .into_vec::<i32>()
-            .unwrap();
-        let mut result = vec![vec![false; width]; height];
-        for y in 0..height {
-            for x in 0..width {
-                result[y][x] = cells[(y * width) + x] == 1;
-            }
-        }
-        result
+impl FlowVisApp {
+    fn get_cell_data(&self) -> TensorData {
+        self.cell_data.lock().unwrap().clone()
     }
 
     pub fn render(
@@ -341,16 +316,12 @@ impl<B: Backend> FlowVisApp<B> {
     ) {
         use graphics::*;
 
-        let rho = density(self.get_state());
-        let rho = rho.powi_scalar(2.0);
-        let max_rho = rho.clone().max().into_scalar();
-        let rho = rho.div_scalar(max_rho);
-        let rho = rho.cast(F32).to_data().into_vec::<f32>().unwrap();
+        let solid_cells: TensorDataIndexView<bool, 2> = TensorDataIndexView::view(&self.solid_mask);
 
-        let vis_cells = self.vis_cells();
-        let solid_cells = self.solid_cells();
+        let cell_data = self.get_cell_data();
+        let vis_cells: TensorDataIndexView<f32, 3> = TensorDataIndexView::view(&cell_data);
+        let [height, width] = cell_data.shape[0..2].try_into().unwrap();
 
-        let [height, width] = self.get_world_shape();
         let [view_width, view_height] = args.viewport().window_size;
 
         let [x_step, y_step] = [view_width / (width as f64), view_height / (height as f64)];
@@ -358,10 +329,9 @@ impl<B: Backend> FlowVisApp<B> {
         self.gl.draw(args.viewport(), |c, gl| {
             for y in 0..height {
                 for x in 0..width {
-                    let (uy, ux) = vis_cells[y][x];
-                    let is_solid = solid_cells[y][x];
-
-                    let _d = rho[y * width + x];
+                    let uy: f32 = vis_cells[[y, x, 0]];
+                    let ux: f32 = vis_cells[[y, x, 1]];
+                    let is_solid = solid_cells[[y, x]];
 
                     let color = if is_solid {
                         [1., 1., 1., 1.]

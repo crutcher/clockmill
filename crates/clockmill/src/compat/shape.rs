@@ -13,9 +13,9 @@ use burn::tensor::indexing::canonicalize_index;
 ///
 /// # Returns
 /// - the ravel offset index.
-pub fn ravel_shape<const R: usize, I: AsIndex>(
+pub fn ravel_shape<I: AsIndex>(
     shape: &Shape,
-    coords: [I; R],
+    coords: &[I],
 ) -> usize {
     ravel_dims(&shape.dims, coords)
 }
@@ -25,25 +25,27 @@ pub fn ravel_shape<const R: usize, I: AsIndex>(
 /// This returns the row-major order raveling.
 ///
 /// # Arguments
+/// - `dims`: the dimensions of the shape.
 /// - `coords`: must be the same size as `self.rank()`.
 ///
 /// # Returns
 /// - the ravel offset index.
-pub fn ravel_dims<const R: usize, I: AsIndex>(
+pub fn ravel_dims<I: AsIndex>(
     dims: &[usize],
-    coords: [I; R],
+    coords: &[I],
 ) -> usize {
     assert_eq!(
         dims.len(),
-        R,
-        "Shape rank mismatch: expected {}, got {R}",
+        coords.len(),
+        "Shape rank mismatch: expected {}, got {}",
         dims.len(),
+        coords.len(),
     );
 
     let mut ravel_idx = 0;
     let mut stride = 1;
 
-    for i in (0..R).rev() {
+    for i in (0..dims.len()).rev() {
         let dim = dims[i];
         let coord = canonicalize_index(coords[i], dim, false);
 

@@ -98,11 +98,10 @@ fn run<B: Backend>(args: &Args) {
 
     world_state.solid_mask = world_state
         .solid_mask
-        .slice_fill(s![2 * h6..2*h6 + stroke, w6..3 *w6], true)
-        .slice_fill(s![2 * h6..2*h6 + stroke, -2 *w6..-w6], true)
-        .slice_fill(s![-h6..-h6 + stroke, w6..2 *w6], true)
-        .slice_fill(s![-h6..-h6 + stroke, -3 *w6..-w6], true)
-    ;
+        .slice_fill(s![2 * h6..2 * h6 + stroke, w6..3 * w6], true)
+        .slice_fill(s![2 * h6..2 * h6 + stroke, -2 * w6..-w6], true)
+        .slice_fill(s![-h6..-h6 + stroke, w6..2 * w6], true)
+        .slice_fill(s![-h6..-h6 + stroke, -3 * w6..-w6], true);
 
     let mut world_state = world_state.to_dtype(dtype);
     world_state.save_correct_total_mass();
@@ -316,10 +315,10 @@ impl FlowVisApp {
     ) {
         use graphics::*;
 
-        let solid_cells: TensorDataIndexView<bool, 2> = TensorDataIndexView::view(&self.solid_mask);
+        let solid_cells: TensorDataIndexView<bool> = TensorDataIndexView::view(&self.solid_mask);
 
         let cell_data = self.get_cell_data();
-        let vis_cells: TensorDataIndexView<f32, 3> = TensorDataIndexView::view(&cell_data);
+        let vis_cells: TensorDataIndexView<f32> = TensorDataIndexView::view(&cell_data);
         let [height, width] = cell_data.shape[0..2].try_into().unwrap();
 
         let [view_width, view_height] = args.viewport().window_size;
@@ -329,9 +328,9 @@ impl FlowVisApp {
         self.gl.draw(args.viewport(), |c, gl| {
             for y in 0..height {
                 for x in 0..width {
-                    let uy: f32 = vis_cells[[y, x, 0]];
-                    let ux: f32 = vis_cells[[y, x, 1]];
-                    let is_solid = solid_cells[[y, x]];
+                    let uy: f32 = vis_cells[&[y, x, 0]];
+                    let ux: f32 = vis_cells[&[y, x, 1]];
+                    let is_solid = solid_cells[&[y, x]];
 
                     let color = if is_solid {
                         [1., 1., 1., 1.]

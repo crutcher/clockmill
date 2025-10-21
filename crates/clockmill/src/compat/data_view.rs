@@ -7,14 +7,14 @@ use std::ops::Index;
 
 /// Ravel Index View for a `TensorData`.
 #[derive(Debug)]
-pub struct TensorDataIndexView<'a, E: Element, const R: usize> {
+pub struct TensorDataIndexView<'a, E: Element> {
     data: &'a TensorData,
     _phantom: std::marker::PhantomData<&'a E>,
 }
 
-impl<'a, E: Element, const R: usize> TensorDataIndexView<'a, E, R> {
+impl<'a, E: Element> TensorDataIndexView<'a, E> {
     /// Get an indexed view of the data.
-    pub fn view(data: &'a TensorData) -> TensorDataIndexView<'a, E, R> {
+    pub fn view(data: &'a TensorData) -> TensorDataIndexView<'a, E> {
         TensorDataIndexView {
             data,
             _phantom: std::marker::PhantomData,
@@ -22,11 +22,11 @@ impl<'a, E: Element, const R: usize> TensorDataIndexView<'a, E, R> {
     }
 }
 
-impl<'a, I: AsIndex, E: Element, const R: usize> Index<[I; R]> for TensorDataIndexView<'a, E, R> {
+impl<'a, I: AsIndex, E: Element> Index<&[I]> for TensorDataIndexView<'a, E> {
     type Output = E;
     fn index(
         &self,
-        index: [I; R],
+        index: &[I],
     ) -> &Self::Output {
         &self.data.as_slice::<E>().unwrap()[ravel_dims(&self.data.shape, index)]
     }

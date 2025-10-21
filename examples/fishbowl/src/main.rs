@@ -162,7 +162,7 @@ impl FishbowlApp {
         self.gl.draw(args.viewport(), |c, gl| {
             for h_idx in 0..h {
                 for w_idx in 0..w {
-                    let is_live: bool = frame_slice[ravel_dims(&[h, w], [h_idx, w_idx])];
+                    let is_live: bool = frame_slice[ravel_dims(&[h, w], &[h_idx, w_idx])];
 
                     let mut color = if is_live {
                         [1.0, 1.0, 1.0, 1.0]

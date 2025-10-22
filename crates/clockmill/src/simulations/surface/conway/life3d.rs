@@ -226,6 +226,8 @@ impl<B: Backend> ConwayLife3DState<B> {
     /// Advance the game state.
     pub fn step(&mut self) {
         self.state = next_state_wrapped_3d(self.state.clone(), &self.rules);
+
+        B::sync(&self.device());
     }
 }
 

@@ -234,7 +234,9 @@ impl<B: Backend> ConwayLife2DState<B> {
     pub fn step(&mut self) {
         self.previous = Some(self.state.clone());
 
-        self.state = next_state_wrapped_2d(self.state.clone())
+        self.state = next_state_wrapped_2d(self.state.clone());
+
+        B::sync(&self.device());
     }
 
     /// Read a slice of the current board state.

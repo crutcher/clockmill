@@ -194,6 +194,8 @@ impl<B: Backend> LBMD2Q9State<B> {
 
         self.dist = thermal_phase;
         self.step_count += 1;
+
+        B::sync(&self.device());
     }
 
     /// Get the current mass of the simm.

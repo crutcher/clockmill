@@ -147,7 +147,7 @@ fn run<B: Backend>(args: &Args) {
 
     // Create a Glutin window.
     let mut window: Window = WindowSettings::new(
-        "flowvis",
+        format!("lattice-boltzmann-2q9-flow {height}x{width}"),
         [width as f64 * args.zoom, height as f64 * args.zoom],
     )
     .graphics_api(opengl)

@@ -97,9 +97,11 @@ fn run<B: Backend>(args: &Args) {
     // Change this to OpenGL::V2_1 if not working.
     let opengl = OpenGL::V3_2;
 
+    let [height, width] = args.grid_shape;
+
     // Create a Glutin window.
     let mut window: Window = WindowSettings::new(
-        "fishbowl",
+        format!("conway's game of life {height}x{width}"),
         [
             args.grid_shape[1] as f64 * args.zoom,
             args.grid_shape[0] as f64 * args.zoom,

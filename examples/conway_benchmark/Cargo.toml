@@ -5,8 +5,9 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-burn = { workspace = true, features = ["fusion", "autotune", "wgpu"] }
 clockmill = { path = "../../crates/clockmill" }
+
+burn = { workspace = true, features = ["fusion", "autotune"] }
 clap = { workspace = true, features = ["derive"] }
 indicatif = { workspace = true }
 
@@ -14,7 +15,7 @@ indicatif = { workspace = true }
 workspace = true
 
 [features]
-default = ["wgpu"]
+default = []
 cuda = ["burn/cuda"]
 metal = ["burn/metal"]
 wgpu = ["burn/wgpu"]

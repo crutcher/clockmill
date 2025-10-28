@@ -7,7 +7,7 @@ use clockmill::simulations::surface::conway::life3d::{
 use indicatif::ProgressBar;
 use std::time::Instant;
 
-/// Conway's Game of Life demo for Burn.
+/// Conway's Game of Life benchmark for Burn.
 #[derive(Parser, Debug)]
 #[command(long_about = None)]
 pub struct Args {
@@ -36,11 +36,11 @@ fn main() {
     let args = Args::parse();
     println!("{:#?}", args);
 
-    #[cfg(feature = "cuda")]
-    run::<burn::backend::Cuda>(&args);
-
     #[cfg(feature = "wgpu")]
     run::<burn::backend::Wgpu>(&args);
+
+    #[cfg(feature = "cuda")]
+    run::<burn::backend::Cuda>(&args);
 
     #[cfg(feature = "metal")]
     run::<burn::backend::Metal>(&args);

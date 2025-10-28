@@ -3,7 +3,6 @@ use clap::Parser;
 use clockmill::compat::shape::ravel_dims;
 use clockmill::framework::config_parsers::parse_shape;
 use clockmill::simulations::surface::conway::life2d::{ConwayLife2DConfig, ConwayLife2DState};
-use color::ColorScheme;
 use glutin_window::GlutinWindow as Window;
 use indicatif::ProgressBar;
 use opengl_graphics::{GlGraphics, OpenGL};
@@ -16,8 +15,6 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
-
-mod color;
 
 /// Conway's Game of Life demo for Burn.
 #[derive(Parser, Debug)]
@@ -54,21 +51,17 @@ pub struct Args {
     /// The opacity between frames.
     #[arg(long, default_value_t = 0.8)]
     pub opacity: f32,
-
-    /// The color scheme to use.
-    #[arg(long, default_value = "inverted")]
-    pub color_scheme: ColorScheme,
 }
 
 fn main() {
     let args = Args::parse();
     println!("{:#?}", args);
 
-    #[cfg(feature = "cuda")]
-    run::<burn::backend::Cuda>(&args);
-
     #[cfg(feature = "wgpu")]
     run::<burn::backend::Wgpu>(&args);
+
+    #[cfg(feature = "cuda")]
+    run::<burn::backend::Cuda>(&args);
 
     #[cfg(feature = "metal")]
     run::<burn::backend::Metal>(&args);

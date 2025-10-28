@@ -1,12 +1,13 @@
 [package]
-name = "fishbowl"
+name = "conway_vis"
 publish = false
 edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-burn = { workspace = true, features = ["fusion", "autotune"] }
 clockmill = { path = "../../crates/clockmill" }
+
+burn = { workspace = true, features = ["fusion", "autotune"] }
 clap = { workspace = true, features = ["derive"] }
 
 piston = { workspace = true}
@@ -21,7 +22,7 @@ indicatif = { workspace = true }
 workspace = true
 
 [features]
-default = ["wgpu"]
+default = []
 cuda = ["burn/cuda", "burn/cubecl"]
 metal = ["burn/metal"]
 wgpu = ["burn/wgpu", "burn/cubecl"]

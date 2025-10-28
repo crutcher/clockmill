@@ -62,11 +62,11 @@ fn main() {
     let args = Args::parse();
     println!("{:#?}", args);
 
-    #[cfg(feature = "cuda")]
-    run::<burn::backend::Cuda<f32, i32>>(&args);
-
     #[cfg(feature = "wgpu")]
     run::<burn::backend::Wgpu>(&args);
+
+    #[cfg(feature = "cuda")]
+    run::<burn::backend::Cuda<f32, i32>>(&args);
 
     #[cfg(feature = "metal")]
     run::<burn::backend::Metal>(&args);

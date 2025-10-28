@@ -1,12 +1,13 @@
 [package]
-name = "flowvis"
+name = "lbm2d_vis"
 publish = false
 edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-burn = { workspace = true, features = ["fusion", "autotune"] }
 clockmill = { path = "../../crates/clockmill" }
+
+burn = { workspace = true, features = ["fusion", "autotune"] }
 clap = { workspace = true, features = ["derive"] }
 
 indicatif = { workspace = true }
@@ -22,7 +23,7 @@ rand = { workspace = true }
 workspace = true
 
 [features]
-default = ["wgpu"]
+default = []
 cuda = ["burn/cuda"]
 metal = ["burn/metal"]
 wgpu = ["burn/wgpu"]

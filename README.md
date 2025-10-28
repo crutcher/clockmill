@@ -32,7 +32,7 @@ Options:
   -h, --help                               Print help
 ```
 
-You must build with on of the following features:
+You must build with one of the following features:
  * `wgpu`
  * `cuda`
  * `metal`
@@ -71,7 +71,7 @@ Options:
           Print help
 ```
 
-You must build with on of the following features:
+You must build with one of the following features:
 * `wgpu`
 * `cuda`
 * `metal`
@@ -98,7 +98,7 @@ Options:
   -h, --help 
 ```
 
-You must build with on of the following features:
+You must build with one of the following features:
 * `wgpu`
 * `cuda`
 * `metal`

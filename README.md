@@ -103,10 +103,12 @@ You must build with one of the following features:
 * `cuda`
 * `metal`
 
+### Note: wgpu seem
+
 Example:
 
 ```terminaloutput
-$ cargo run --release -p conway_benchmark --features wgpu
+$ cargo run --release -p conway_benchmark --features cuda
 Args {
     steps: 1000,
     dims: 2,

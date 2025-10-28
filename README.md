@@ -16,6 +16,8 @@ This repo uses a direct link to a fixed revision of the dev branch of `burn`,
 
 ## lbm2d_vis - Fluid Flow Demo
 
+[demo video](https://github.com/crutcher/clockmill/raw/refs/heads/main/docs/media/lbm2d_vis.20251028.mp4)
+
 ```terminaloutput
 Fluid Flow demo for Burn
 
@@ -44,6 +46,9 @@ $ cargo run --release -p lbm2d_vis --features wgpu
 ```
 
 ## conway_vis - Conway's Game of Life Demo
+
+[demo video](https://github.com/crutcher/clockmill/raw/refs/heads/main/docs/media/conway_vis.20251028.mp4)
+
 
 ```terminaloutput
 Conway's Game of Life demo for Burn

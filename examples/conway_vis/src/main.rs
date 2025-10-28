@@ -21,7 +21,7 @@ use std::time::Duration;
 #[command(long_about = None)]
 pub struct Args {
     /// The grid shape as `HEIGHT,WIDTH`, or `SIZE`.
-    #[arg(long, value_parser=parse_shape, default_value="800")]
+    #[arg(long, value_parser=parse_shape, default_value="400")]
     pub grid_shape: [usize; 2],
 
     /// The number of steps to skip on init.
@@ -41,7 +41,7 @@ pub struct Args {
     pub fps: u64,
 
     /// The tics per second.
-    #[arg(long, default_value_t = 500.)]
+    #[arg(long, default_value_t = 60.)]
     pub tps: f32,
 
     /// The initial window zoom.

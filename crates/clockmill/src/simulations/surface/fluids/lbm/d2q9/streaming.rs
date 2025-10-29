@@ -74,7 +74,7 @@ pub fn stream_interior_windows<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 4> {
 pub fn outflow_clipping_stream<B: Backend>(thermal_dist: Tensor<B, 4>) -> Tensor<B, 4> {
     thermal_dist
         .zeros_like()
-        .cast(thermal_dist.dtype())
+        .cast(thermal_dist.dtype()) // TODO: remove when zeros_like() supports dtype.
         // stream top edges.
         // Top [1, 1]
         .slice_assign(s![0, .., 1, 1], thermal_dist.clone().slice(s![0, .., 1, 1]))

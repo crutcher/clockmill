@@ -1,6 +1,6 @@
 use burn::Tensor;
 use burn::prelude::{Backend, Bool, ElementConversion, TensorData, s};
-use burn::tensor::DType::F32;
+use burn::tensor::DType;
 use clap::Parser;
 use clockmill::compat::data_view::TensorDataIndexView;
 use clockmill::framework::config_parsers::parse_shape;
@@ -24,7 +24,6 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
-use burn::tensor::DType;
 
 /// Fluid Flow demo for Burn.
 #[derive(Parser, Debug)]
@@ -67,13 +66,16 @@ fn main() {
     run::<burn::backend::Wgpu>(&args, DType::F32);
 
     #[cfg(feature = "cuda")]
-    run::<burn::backend::Cuda<f32, i32>>(&args, DType::F16);
+    run::<burn::backend::Cuda<f32, i32>>(&args, DType::F32);
 
     #[cfg(feature = "metal")]
     run::<burn::backend::Metal>(&args, DType::F32);
 }
 
-fn run<B: Backend>(args: &Args, dtype: DType) {
+fn run<B: Backend>(
+    args: &Args,
+    dtype: DType,
+) {
     let device = Default::default();
 
     // Change this to OpenGL::V2_1 if not working.
@@ -138,7 +140,7 @@ fn run<B: Backend>(args: &Args, dtype: DType) {
             let cells = ((cells / scale) + 1.0) / 2.0;
             // let cells = cells.mul_scalar(std::f64::consts::PI / 2.0).sin();
 
-            *vis_cells_publish.lock().unwrap() = cells.cast(F32).to_data().convert::<f32>();
+            *vis_cells_publish.lock().unwrap() = cells.cast(DType::F32).to_data().convert::<f32>();
 
             last_export = std::time::Instant::now();
         }

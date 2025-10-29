@@ -108,8 +108,6 @@ You must build with one of the following features:
 * `cuda`
 * `metal`
 
-### Note: wgpu seem
-
 Example:
 
 ```terminaloutput

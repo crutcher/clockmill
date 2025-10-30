@@ -1364,6 +1364,7 @@ dependencies = [
  "burn",
  "clap",
  "clockmill",
+ "cudarc 0.16.6",
  "indicatif",
 ]
 
@@ -1374,6 +1375,7 @@ dependencies = [
  "burn",
  "clap",
  "clockmill",
+ "cudarc 0.16.6",
  "gl 0.14.0",
  "indicatif",
  "piston",
@@ -1746,7 +1748,7 @@ dependencies = [
  "cubecl-core",
  "cubecl-cpp",
  "cubecl-runtime",
- "cudarc",
+ "cudarc 0.17.4",
  "derive-new",
  "half",
  "log",
@@ -1979,6 +1981,15 @@ dependencies = [
  "log",
  "sanitize-filename",
  "wgpu",
+]
+
+[[package]]
+name = "cudarc"
+version = "0.16.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17200eb07e7d85a243aa1bf4569a7aa998385ba98d14833973a817a63cc86e92"
+dependencies = [
+ "libloading 0.8.9",
 ]
 
 [[package]]
@@ -3805,6 +3816,7 @@ dependencies = [
  "burn",
  "clap",
  "clockmill",
+ "cudarc 0.16.6",
  "gl 0.14.0",
  "indicatif",
  "piston",

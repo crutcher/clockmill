@@ -24,8 +24,14 @@ doc_markdown = "warn"
 
 [workspace.dependencies]
 burn = "^0.19.0"
-bimm-contracts = "^0.19.0"
+
 serde = { version = "^1.0.228" }
+
+# Bug in burn/cuda deps; pinned to force "nvrtc" for cudarc:
+# > cudarc = { workspace = true, features = ["nvrtc"], optional = true }
+cudarc = "0.16.6"
+
+bimm-contracts = "^0.19.0"
 
 rand = "^0.9.2"
 nearly = "^0.4.0"

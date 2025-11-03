@@ -329,9 +329,9 @@ checksum = "55248b47b0caf0546f7988906588779981c43bb1bc9d0c44087278f80cdb44ba"
 
 [[package]]
 name = "bimm-contracts"
-version = "0.19.0"
+version = "0.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aad42f181fdd1c76afeb0b32797fb51729d9ac7d8485bfebb04300e13137a396"
+checksum = "5109dea6fa8bcb42b704487d4035a924b238b98994fb49a58274fa6c5ab41677"
 dependencies = [
  "bimm-contracts-macros",
  "burn",
@@ -339,9 +339,9 @@ dependencies = [
 
 [[package]]
 name = "bimm-contracts-macros"
-version = "0.19.0"
+version = "0.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a30a7d9f41df366b6733b82c04777d94b401575acbb5e537d123da25b4089e52"
+checksum = "e82ec476ae99dfbcf5e1f88f46f99efec29ea2143236f9fe736c3b24828ef2d1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1191,9 +1191,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.50"
+version = "4.5.51"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c2cfd7bf8a6017ddaa4e32ffe7403d547790db06bd171c1c53926faab501623"
+checksum = "4c26d721170e0295f191a69bd9a1f93efcdb0aff38684b61ab5750468972e5f5"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -1201,9 +1201,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.50"
+version = "4.5.51"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a4c05b9e80c5ccd3a7ef080ad7b6ba7d6fc00a985b8b157197075677c82c7a0"
+checksum = "75835f0c7bf681bfd05abe44e965760fea999a5286c6eb2d59883634fd02011a"
 dependencies = [
  "anstream",
  "anstyle",

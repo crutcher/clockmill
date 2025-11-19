@@ -9,9 +9,6 @@ clockmill = { path = "../../crates/clockmill" }
 
 burn = { workspace = true, features = ["fusion", "autotune"] }
 
-# Bug in burn/cuda deps; pinned to force "nvrtc" for cudarc:
-cudarc = { workspace = true, features = ["nvrtc"], optional = true }
-
 clap = { workspace = true, features = ["derive"] }
 indicatif = { workspace = true }
 

@@ -1,7 +1,7 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="Run fishbowl" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
+  <configuration default="false" name="Run conway_vis" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
     <option name="buildProfileId" value="release" />
-    <option name="command" value="run --package fishbowl" />
+    <option name="command" value="run --package conway_vis --features cuda" />
     <option name="workingDirectory" value="file://$PROJECT_DIR$" />
     <envs />
     <option name="emulateTerminal" value="true" />

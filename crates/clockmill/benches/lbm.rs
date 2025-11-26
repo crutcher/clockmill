@@ -1,7 +1,7 @@
 use burn::Tensor;
 use burn::backend::Wgpu;
 use burn::prelude::{Bool, s};
-use burn::tensor::DType::{F16, F32};
+use burn::tensor::DType::{F32, F64};
 use burn::tensor::Distribution;
 use clockmill::simulations::surface::fluids::lbm::d2q9::collision::{
     bgk_collision, bgk_collision_with_spherical_reflection,
@@ -23,7 +23,7 @@ fn bench_lbm_d2q9(c: &mut Criterion) {
 
     let relaxation = RelaxationParam::Omega(1.5);
 
-    for dtype in [F16, F32] {
+    for dtype in [F32, F64] {
         let dist = Tensor::<B, 4>::random([n, n, 3, 3], Distribution::Default, &device);
         let dist = dist.cast(dtype);
 

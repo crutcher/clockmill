@@ -1,8 +1,7 @@
 //! # Shape Helpers
 
 use burn::prelude::Shape;
-use burn::tensor::AsIndex;
-use burn::tensor::indexing::canonicalize_index;
+use burn::tensor::{canonicalize_index, AsIndex};
 
 /// Compute the ravel index for the given coordinates.
 ///

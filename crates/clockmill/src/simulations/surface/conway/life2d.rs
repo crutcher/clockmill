@@ -236,7 +236,7 @@ impl<B: Backend> ConwayLife2DState<B> {
 
         self.state = next_state_wrapped_2d(self.state.clone());
 
-        B::sync(&self.device());
+        B::sync(&self.device()).unwrap();
     }
 
     /// Read a slice of the current board state.

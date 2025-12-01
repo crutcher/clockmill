@@ -23,7 +23,7 @@ double_must_use = "allow"
 doc_markdown = "warn"
 
 [workspace.dependencies]
-burn = "^0.19.1"
+burn = "^0.20.0-pre.4"
 
 serde = { version = "^1.0.228" }
 

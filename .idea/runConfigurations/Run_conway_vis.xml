@@ -3,7 +3,9 @@
     <option name="buildProfileId" value="release" />
     <option name="command" value="run --package conway_vis --features cuda" />
     <option name="workingDirectory" value="file://$PROJECT_DIR$" />
-    <envs />
+    <envs>
+      <env name="CUDA_HOME" value="/usr/local/cuda-13.0" />
+    </envs>
     <option name="emulateTerminal" value="true" />
     <option name="channel" value="DEFAULT" />
     <option name="requiredFeatures" value="true" />

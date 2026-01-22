@@ -94,9 +94,9 @@ fn read_2d_slice<B: Backend, R>(
     ranges: R,
 ) -> Vec<Vec<bool>>
 where
-    R: SliceArg<2>,
+    R: SliceArg,
 {
-    let slices = ranges.into_slices(state.shape());
+    let slices: [Slice; 2] = ranges.into_slices(&state.shape()).try_into().unwrap();
     let [h, w] = slices_shape(&slices);
 
     let block_data = state.clone().slice(slices).to_data();
@@ -195,7 +195,6 @@ impl ConwayLife2DConfig {
     ) -> ConwayLife2DState<B> {
         ConwayLife2DState {
             state: Tensor::<B, 2, Int>::zeros(self.shape, device).bool(),
-            previous: None,
         }
     }
 }
@@ -204,9 +203,6 @@ impl ConwayLife2DConfig {
 pub struct ConwayLife2DState<B: Backend> {
     /// The current state of the board.
     pub state: Tensor<B, 2, Bool>,
-
-    /// The previous state of the board.
-    pub previous: Option<Tensor<B, 2, Bool>>,
 }
 
 impl<B: Backend> ConwayLife2DState<B> {
@@ -232,8 +228,6 @@ impl<B: Backend> ConwayLife2DState<B> {
     ///
     /// Wraps edges.
     pub fn step(&mut self) {
-        self.previous = Some(self.state.clone());
-
         self.state = next_state_wrapped_2d(self.state.clone());
 
         B::sync(&self.device()).unwrap();
@@ -245,7 +239,7 @@ impl<B: Backend> ConwayLife2DState<B> {
         ranges: R,
     ) -> Vec<Vec<bool>>
     where
-        R: SliceArg<2>,
+        R: SliceArg,
     {
         read_2d_slice(self.state.clone(), ranges)
     }
@@ -256,9 +250,9 @@ impl<B: Backend> ConwayLife2DState<B> {
         ranges: R,
         data: Vec<Vec<bool>>,
     ) where
-        R: SliceArg<2>,
+        R: SliceArg,
     {
-        let slices = ranges.into_slices(self.state.shape());
+        let slices: [Slice; 2] = ranges.into_slices(&self.state.shape()).try_into().unwrap();
         let [h, w] = slices_shape(&slices);
 
         assert_eq!(data.len(), h);

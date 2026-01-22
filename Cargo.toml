@@ -23,7 +23,7 @@ double_must_use = "allow"
 doc_markdown = "warn"
 
 [workspace.dependencies]
-burn = "^0.20.0-pre.4"
+burn = "^0.20.0"
 
 serde = { version = "^1.0.228" }
 
@@ -36,10 +36,12 @@ indicatif = "^0.18.3"
 
 clap = "^4.5.52"
 
-criterion = { version = "^0.7.0" }
+criterion = { version = "^0.8.1" }
 
 piston = "^1.0.0"
 piston2d-graphics = "^0.45.0"
+
+# moving to 0.73.2 crashes in a way I haven't debugged yet.
 pistoncore-glutin_window = "^0.72.0"
 piston2d-opengl_graphics = "^0.89.0"
 gl = "^0.14.0"

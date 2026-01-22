@@ -1,7 +1,7 @@
 //! # Shape Helpers
 
 use burn::prelude::Shape;
-use burn::tensor::{canonicalize_index, AsIndex};
+use burn::tensor::{AsIndex, wrap_index};
 
 /// Compute the ravel index for the given coordinates.
 ///
@@ -46,7 +46,7 @@ pub fn ravel_dims<I: AsIndex>(
 
     for i in (0..dims.len()).rev() {
         let dim = dims[i];
-        let coord = canonicalize_index(coords[i], dim, false);
+        let coord = wrap_index(coords[i], dim);
 
         ravel_idx += coord * stride;
         stride *= dim;

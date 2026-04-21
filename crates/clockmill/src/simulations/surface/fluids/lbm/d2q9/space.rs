@@ -119,7 +119,7 @@ pub fn dbg_dist<B: Backend>(
 ) {
     let [height, width] = unpack_shape_contract!(
         ["h", "w", "vy", "vx"],
-        &dist.shape().dims,
+        dist.shape().as_slice(),
         &["h", "w"],
         &[("vy", 3), ("vx", 3)]
     );

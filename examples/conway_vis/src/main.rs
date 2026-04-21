@@ -65,6 +65,9 @@ fn main() {
 
     #[cfg(feature = "metal")]
     run::<burn::backend::Metal>(&args);
+
+    #[cfg(feature = "flex")]
+    run::<burn::backend::Flex>(&args);
 }
 
 fn run<B: Backend>(args: &Args) {

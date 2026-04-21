@@ -16,7 +16,7 @@ pub fn ravel_shape<I: AsIndex>(
     shape: &Shape,
     coords: &[I],
 ) -> usize {
-    ravel_dims(&shape.dims, coords)
+    ravel_dims(shape.as_slice(), coords)
 }
 
 /// Compute the ravel index for the given coordinates.

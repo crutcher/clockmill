@@ -57,7 +57,7 @@ impl<B: Backend> OmegaSource<B> {
     ) -> Tensor<B, 2> {
         match self {
             OmegaSource::Relaxation(relaxation) => {
-                Tensor::<B, 1>::from_data_dtype([relaxation.as_omega_value()], device, dtype)
+                Tensor::<B, 1>::from_data([relaxation.as_omega_value()], (device, dtype))
                     .unsqueeze()
             }
             OmegaSource::Omega(omega) => omega.clone().to_device(device).cast(dtype),

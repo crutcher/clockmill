@@ -23,7 +23,7 @@ double_must_use = "allow"
 doc_markdown = "warn"
 
 [workspace.dependencies]
-burn = "^0.20.0"
+burn = { git = "https://github.com/tracel-ai/burn", rev = "0e05dc6e02e18e2bd586d4119f5bb014c16adcb3" }
 
 serde = { version = "^1.0.228" }
 

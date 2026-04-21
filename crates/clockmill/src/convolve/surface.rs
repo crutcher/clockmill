@@ -35,7 +35,7 @@ where
     #[cfg(debug_assertions)]
     let [batch, c_in, height, width] = bimm_contracts::unpack_shape_contract!(
         ["batch", "c_in", "height", "width"],
-        &input.shape().dims
+        input.shape().as_slice()
     );
     #[cfg(debug_assertions)]
     let h_wins = burn::tensor::ops::unfold::calculate_unfold_windows(height, kernel[0], stride[0]);
@@ -49,7 +49,7 @@ where
     #[cfg(debug_assertions)]
     bimm_contracts::assert_shape_contract_periodically!(
         ["batch", "c_in", "h_wins", "w_wins", "kernel0", "kernel1"],
-        &x.shape().dims,
+        x.shape().as_slice(),
         &[
             ("batch", batch),
             ("c_in", c_in),
@@ -65,7 +65,7 @@ where
     #[cfg(debug_assertions)]
     bimm_contracts::assert_shape_contract_periodically!(
         ["batch", "h_wins", "w_wins", "c_in", "kernel0", "kernel1"],
-        &x.shape().dims,
+        x.shape().as_slice(),
         &[
             ("batch", batch),
             ("c_in", c_in),
@@ -81,7 +81,7 @@ where
     #[cfg(debug_assertions)]
     bimm_contracts::assert_shape_contract_periodically!(
         ["batch", "h_wins", "w_wins", "c_out"],
-        &x.shape().dims,
+        x.shape().as_slice(),
         &[("batch", batch), ("h_wins", h_wins), ("w_wins", w_wins),]
     );
 

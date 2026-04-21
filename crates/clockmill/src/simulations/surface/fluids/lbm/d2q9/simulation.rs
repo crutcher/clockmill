@@ -113,8 +113,8 @@ pub struct LBMD2Q9State<B: Backend> {
 
 impl<B: Backend> LBMMeta for LBMD2Q9State<B> {
     fn shape(&self) -> [usize; 2] {
-        let dims = &self.dist.shape().dims;
-        [dims[0], dims[1]]
+        let [h, w, _, _] = self.dist.dims();
+        [h, w]
     }
 }
 

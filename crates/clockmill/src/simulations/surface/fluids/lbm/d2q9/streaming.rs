@@ -16,7 +16,7 @@ pub fn stream_interior_windows<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 4> {
     #[cfg(debug_assertions)]
     let [h, w] = bimm_contracts::unpack_shape_contract!(
         ["H", "W", "VY", "VX"],
-        &dist.shape().dims,
+        dist.shape().as_slice(),
         &["H", "W"],
         &[("VY", 3), ("VX", 3)]
     );
@@ -53,7 +53,7 @@ pub fn stream_interior_windows<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 4> {
     #[cfg(debug_assertions)]
     bimm_contracts::assert_shape_contract_periodically!(
         ["H" - "PAD", "W" - "PAD", "VY", "VX"],
-        &result.shape().dims,
+        result.shape().as_slice(),
         &[("H", h), ("W", w), ("PAD", 2), ("VY", 3), ("VX", 3)]
     );
 
@@ -220,7 +220,7 @@ mod tests {
 
         let result = stream_interior_windows(state.clone());
 
-        assert_eq!(result.shape().dims, vec![1, 1, 3, 3]);
+        assert_eq!(result.dims(), [1, 1, 3, 3]);
 
         let expected: Tensor<B, 4> = Tensor::from_data([[[
             [72., 64., 56.],

@@ -1,8 +1,15 @@
 //! # Thermal Equilibrium
-use crate::simulations::surface::fluids::lbm::d2q9::space::LbmTables;
-use crate::simulations::surface::fluids::lbm::d2q9::{C2, C4, space};
-use burn::Tensor;
-use burn::prelude::Backend;
+use burn::{
+    Tensor,
+    prelude::Backend,
+};
+
+use crate::simulations::surface::fluids::lbm::d2q9::{
+    C2,
+    C4,
+    space,
+    space::LbmTables,
+};
 
 /// Compute thermal equilibrium.
 ///
@@ -71,19 +78,28 @@ pub fn ldv_projection<B: Backend>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::simulations::surface::fluids::lbm::d2q9::space::{
-        LbmTables, density, direction_vectors, moments, velocity_squared,
+    use bunsen::support::testing::PerfTestBackend;
+    use burn::tensor::{
+        DType::F32,
+        Distribution,
+        Tolerance,
     };
-    use crate::simulations::surface::fluids::lbm::d2q9::thermal::lattice_dot_velocity;
-    use burn::backend::Wgpu;
-    use burn::tensor::DType::F32;
-    use burn::tensor::{Distribution, Tolerance};
+
+    use super::*;
+    use crate::simulations::surface::fluids::lbm::d2q9::{
+        space::{
+            LbmTables,
+            density,
+            direction_vectors,
+            moments,
+            velocity_squared,
+        },
+        thermal::lattice_dot_velocity,
+    };
 
     #[test]
-    #[rustfmt::skip]
     fn test_equilibrium() {
-        type B = Wgpu;
+        type B = PerfTestBackend;
         let device = Default::default();
 
         let dist = Tensor::<B, 4>::random([20, 20, 3, 3], Distribution::Default, &device);
@@ -101,18 +117,19 @@ mod tests {
         let e_dot_u = lattice_dot_velocity(u.clone(), lbm_tables.e_vec());
         let u_sq = velocity_squared(u);
         let expected_eq = (lbm_tables.w().unsqueeze() * rho.unsqueeze_dim(2)).mul(
-            1
-                + 3.0 * e_dot_u.clone()
-                + 4.5 * e_dot_u.square()
-                - 1.5 * u_sq.unsqueeze_dims::<4>(&[2, 3])
+            1 + 3.0 * e_dot_u.clone() + 4.5 * e_dot_u.square()
+                - 1.5 * u_sq.unsqueeze_dims::<4>(&[2, 3]),
         );
 
-        equi_dist.clone().to_data().assert_approx_eq::<f32>(&expected_eq.to_data(), Tolerance::default());
+        equi_dist
+            .clone()
+            .to_data()
+            .assert_approx_eq::<f32>(&expected_eq.to_data(), Tolerance::default());
     }
 
     #[test]
     fn test_equilibrium_invariants() {
-        type B = Wgpu;
+        type B = PerfTestBackend;
         let device = Default::default();
 
         let dtype = F32;
@@ -133,7 +150,7 @@ mod tests {
 
     #[test]
     fn test_lattice_dot_velocity() {
-        type B = Wgpu;
+        type B = PerfTestBackend;
         let device = Default::default();
 
         let e: Tensor<B, 3> = direction_vectors(&device);

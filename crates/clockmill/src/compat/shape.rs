@@ -1,7 +1,12 @@
 //! # Shape Helpers
 
-use burn::prelude::Shape;
-use burn::tensor::{AsIndex, wrap_index};
+use burn::{
+    prelude::Shape,
+    tensor::{
+        AsIndex,
+        wrap_index,
+    },
+};
 
 /// Compute the ravel index for the given coordinates.
 ///
@@ -16,7 +21,7 @@ pub fn ravel_shape<I: AsIndex>(
     shape: &Shape,
     coords: &[I],
 ) -> usize {
-    ravel_dims(&shape.dims, coords)
+    ravel_dims(shape.as_slice(), coords)
 }
 
 /// Compute the ravel index for the given coordinates.

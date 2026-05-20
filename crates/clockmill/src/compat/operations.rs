@@ -1,7 +1,9 @@
 //! # Compat Tensor Operations
 
-use burn::Tensor;
-use burn::prelude::Backend;
+use burn::{
+    Tensor,
+    prelude::Backend,
+};
 
 /// Maps nan and infinities to numbers.
 pub fn nan_to_num<B: Backend, const D: usize>(

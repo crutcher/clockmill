@@ -1,8 +1,10 @@
 //! # Surface Convolutions (2D)
 
-use burn::Tensor;
-use burn::prelude::Backend;
-use burn::tensor::BasicOps;
+use burn::{
+    Tensor,
+    prelude::Backend,
+    tensor::BasicOps,
+};
 
 /// Convolve a neighborhood function over a 2D tensor.
 ///
@@ -12,8 +14,8 @@ use burn::tensor::BasicOps;
 /// # Arguments
 ///
 /// * `input` - a ``[batch, c_in, height, width]`` tensor.
-/// * `func` - a func from ``[batch, h_wins, w_wins, c_in, kernel[0], kernel[1]]``
-///   to ``[batch, h_wins, w_wins, c_out]``
+/// * `func` - a func from ``[batch, h_wins, w_wins, c_in, kernel[0],
+///   kernel[1]]`` to ``[batch, h_wins, w_wins, c_out]``
 /// * `kernel` - a kernel shape, e.g. ``[3, 3]``.
 /// * `stride` - a kernel stride, e.g. ``[1, 1]``.
 ///
@@ -33,9 +35,9 @@ where
     F: Fn(Tensor<B, 6, KIn>) -> Tensor<B, 4, KOut>,
 {
     #[cfg(debug_assertions)]
-    let [batch, c_in, height, width] = bimm_contracts::unpack_shape_contract!(
+    let [batch, c_in, height, width] = bunsen::contracts::unpack_shape_contract!(
         ["batch", "c_in", "height", "width"],
-        &input.shape().dims
+        input.shape().as_slice()
     );
     #[cfg(debug_assertions)]
     let h_wins = burn::tensor::ops::unfold::calculate_unfold_windows(height, kernel[0], stride[0]);
@@ -47,9 +49,9 @@ where
         .unfold::<6, usize>(3, kernel[1], stride[1]);
 
     #[cfg(debug_assertions)]
-    bimm_contracts::assert_shape_contract_periodically!(
+    bunsen::contracts::assert_shape_contract_periodically!(
         ["batch", "c_in", "h_wins", "w_wins", "kernel0", "kernel1"],
-        &x.shape().dims,
+        x.shape().as_slice(),
         &[
             ("batch", batch),
             ("c_in", c_in),
@@ -63,9 +65,9 @@ where
     let x: Tensor<B, 6, KIn> = x.permute([0, 2, 3, 1, 4, 5]);
 
     #[cfg(debug_assertions)]
-    bimm_contracts::assert_shape_contract_periodically!(
+    bunsen::contracts::assert_shape_contract_periodically!(
         ["batch", "h_wins", "w_wins", "c_in", "kernel0", "kernel1"],
-        &x.shape().dims,
+        x.shape().as_slice(),
         &[
             ("batch", batch),
             ("c_in", c_in),
@@ -79,9 +81,9 @@ where
     let x = (func)(x);
 
     #[cfg(debug_assertions)]
-    bimm_contracts::assert_shape_contract_periodically!(
+    bunsen::contracts::assert_shape_contract_periodically!(
         ["batch", "h_wins", "w_wins", "c_out"],
-        &x.shape().dims,
+        x.shape().as_slice(),
         &[("batch", batch), ("h_wins", h_wins), ("w_wins", w_wins),]
     );
 

@@ -1,29 +1,64 @@
-use burn::Tensor;
-use burn::prelude::{Backend, Bool, ElementConversion, TensorData, s};
-use burn::tensor::DType;
-use clap::Parser;
-use clockmill::compat::data_view::TensorDataIndexView;
-use clockmill::framework::config_parsers::parse_shape;
-use clockmill::simulations::surface::fluids::lbm::d2q9::SPEED_OF_SOUND;
-use clockmill::simulations::surface::fluids::lbm::d2q9::relaxation::RelaxationParam;
-use clockmill::simulations::surface::fluids::lbm::d2q9::simulation::{
-    LBMD2Q9Config, LBMD2Q9State, LBMMeta,
+use std::{
+    sync::{
+        Arc,
+        Mutex,
+        atomic::{
+            AtomicBool,
+            Ordering,
+        },
+    },
+    thread,
+    thread::JoinHandle,
+    time::Duration,
 };
-use clockmill::simulations::surface::fluids::lbm::d2q9::space::LbmTables;
-use clockmill::simulations::surface::fluids::lbm::d2q9::space::macroscopic_momentum;
+
+use burn::{
+    Tensor,
+    prelude::{
+        Backend,
+        Bool,
+        ElementConversion,
+        TensorData,
+        s,
+    },
+    tensor::DType,
+};
+use clap::Parser;
+use clockmill::{
+    compat::data_view::TensorDataIndexView,
+    framework::config_parsers::parse_shape,
+    simulations::surface::fluids::lbm::d2q9::{
+        SPEED_OF_SOUND,
+        relaxation::RelaxationParam,
+        simulation::{
+            LBMD2Q9Config,
+            LBMD2Q9State,
+            LBMMeta,
+        },
+        space::{
+            LbmTables,
+            macroscopic_momentum,
+        },
+    },
+};
 use glutin_window::GlutinWindow as Window;
 use indicatif::ProgressBar;
-use opengl_graphics::{GlGraphics, OpenGL};
-use piston::event_loop::{EventSettings, Events};
-use piston::input::RenderEvent;
-use piston::window::WindowSettings;
-use piston::{EventLoop, OpenGLWindow, RenderArgs};
+use opengl_graphics::{
+    GlGraphics,
+    OpenGL,
+};
+use piston::{
+    EventLoop,
+    OpenGLWindow,
+    RenderArgs,
+    event_loop::{
+        EventSettings,
+        Events,
+    },
+    input::RenderEvent,
+    window::WindowSettings,
+};
 use rand::Rng;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::thread;
-use std::thread::JoinHandle;
-use std::time::Duration;
 
 /// Fluid Flow demo for Burn.
 #[derive(Parser, Debug)]
@@ -63,13 +98,16 @@ fn main() {
     println!("{:#?}", args);
 
     #[cfg(feature = "wgpu")]
-    run::<burn::backend::Wgpu>(&args, DType::F32);
+    run::<burn::backend::Wgpu<burn::tensor::bf16, i16>>(&args, DType::F32);
 
     #[cfg(feature = "cuda")]
-    run::<burn::backend::Cuda<f32, i32>>(&args, DType::F32);
+    run::<burn::backend::Cuda<burn::tensor::bf16, i16>>(&args, DType::F32);
 
     #[cfg(feature = "metal")]
-    run::<burn::backend::Metal>(&args, DType::F32);
+    run::<burn::backend::Metal<burn::tensor::bf16, i16>>(&args, DType::F32);
+
+    #[cfg(feature = "flex")]
+    run::<burn::backend::Flex>(&args, DType::F32);
 }
 
 fn run<B: Backend>(
@@ -290,6 +328,7 @@ impl Simulation {
             shutdown,
         }
     }
+
     pub fn shutdown(mut self) {
         self.shutdown.store(true, Ordering::Relaxed);
         if let Some(handle) = self.handle.take() {

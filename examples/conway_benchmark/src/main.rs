@@ -1,11 +1,25 @@
-use burn::prelude::{Backend, s};
+use std::time::Instant;
+
+use burn::{
+    prelude::{
+        Backend,
+        s,
+    },
+    tensor::f16,
+};
 use clap::Parser;
-use clockmill::simulations::surface::conway::life2d::{ConwayLife2DConfig, ConwayLife2DState};
-use clockmill::simulations::surface::conway::life3d::{
-    ConwayLife3DConfig, ConwayLife3DState, LifeRules,
+use clockmill::simulations::surface::conway::{
+    life2d::{
+        ConwayLife2DConfig,
+        ConwayLife2DState,
+    },
+    life3d::{
+        ConwayLife3DConfig,
+        ConwayLife3DState,
+        LifeRules,
+    },
 };
 use indicatif::ProgressBar;
-use std::time::Instant;
 
 /// Conway's Game of Life benchmark for Burn.
 #[derive(Parser, Debug)]
@@ -37,13 +51,16 @@ fn main() {
     println!("{:#?}", args);
 
     #[cfg(feature = "wgpu")]
-    run::<burn::backend::Wgpu>(&args);
+    run::<burn::backend::Wgpu<f16, i8>>(&args);
 
     #[cfg(feature = "cuda")]
-    run::<burn::backend::Cuda>(&args);
+    run::<burn::backend::Cuda<f16, i8>>(&args);
 
     #[cfg(feature = "metal")]
-    run::<burn::backend::Metal>(&args);
+    run::<burn::backend::Metal<f16, i8>>(&args);
+
+    #[cfg(feature = "flex")]
+    run::<burn::backend::Flex<f16, i8>>(&args);
 }
 
 fn run<B: Backend>(args: &Args) {

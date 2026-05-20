@@ -1,16 +1,26 @@
 #![allow(dead_code)]
 //! # LBM D2Q9 World Module
 
-use crate::simulations::surface::fluids::lbm::d2q9::collision::bgk_collision;
-use crate::simulations::surface::fluids::lbm::d2q9::reflection::with_spherical_reflection;
-use crate::simulations::surface::fluids::lbm::d2q9::relaxation::RelaxationParam;
-use crate::simulations::surface::fluids::lbm::d2q9::space::LbmTables;
-use crate::simulations::surface::fluids::lbm::d2q9::streaming::outflow_clipping_stream;
-use burn::Tensor;
-use burn::config::Config;
-use burn::module::Module;
-use burn::prelude::{Backend, Bool, ElementConversion, s};
-use burn::tensor::DType;
+use burn::{
+    Tensor,
+    config::Config,
+    module::Module,
+    prelude::{
+        Backend,
+        Bool,
+        ElementConversion,
+        s,
+    },
+    tensor::DType,
+};
+
+use crate::simulations::surface::fluids::lbm::d2q9::{
+    collision::bgk_collision,
+    reflection::with_spherical_reflection,
+    relaxation::RelaxationParam,
+    space::LbmTables,
+    streaming::outflow_clipping_stream,
+};
 
 /// Introspection trait for [`LBMD2Q9State`]
 pub trait LBMMeta {
@@ -113,8 +123,8 @@ pub struct LBMD2Q9State<B: Backend> {
 
 impl<B: Backend> LBMMeta for LBMD2Q9State<B> {
     fn shape(&self) -> [usize; 2] {
-        let dims = &self.dist.shape().dims;
-        [dims[0], dims[1]]
+        let [h, w, _, _] = self.dist.dims();
+        [h, w]
     }
 }
 

@@ -11,14 +11,14 @@
 //!
 //! This library uses a ``[H, W, VY=3, VX=3]`` layout.
 //! * ``(H, W)`` determines a cell's spatial location.
-//! * at a given ``(H, W)`` point, the 3x3 ``[VY=3, VX=3]`` grid describes
-//!   the local moving particle population.
+//! * at a given ``(H, W)`` point, the 3x3 ``[VY=3, VX=3]`` grid describes the
+//!   local moving particle population.
 //!
 //! The ``[VY=3, VX=3]`` populations are each moving away from the center
 //! at ``(1, 1)``, which is stationary.
 //!
-//! The ``(y, x)`` directions correspond with the direction vectors ``(y-1, x-1)``;
-//! so ``[H, W, 0, 0]`` is the population at ``(H, W)`` which is moving
+//! The ``(y, x)`` directions correspond with the direction vectors ``(y-1,
+//! x-1)``; so ``[H, W, 0, 0]`` is the population at ``(H, W)`` which is moving
 //! in the ``(-1, -1)`` direction.
 //!
 //! This direction is also available in the `direction_vectors()` interface.
@@ -42,19 +42,28 @@ pub const C4: f64 = C2 * C2;
 
 #[cfg(test)]
 mod tests {
-    use crate::simulations::surface::fluids::lbm::d2q9::collision::bgk_collision_with_spherical_reflection;
-    use crate::simulations::surface::fluids::lbm::d2q9::relaxation::RelaxationParam;
-    use crate::simulations::surface::fluids::lbm::d2q9::space;
-    use crate::simulations::surface::fluids::lbm::d2q9::space::dbg_dist;
-    use crate::simulations::surface::fluids::lbm::d2q9::streaming::outflow_clipping_stream;
-    use burn::Tensor;
-    use burn::backend::Wgpu;
-    use burn::prelude::{Bool, ElementConversion, s};
+    use bunsen::support::testing::PerfTestBackend;
+    use burn::{
+        Tensor,
+        prelude::{
+            Bool,
+            ElementConversion,
+            s,
+        },
+    };
     use nearly::nearly;
+
+    use crate::simulations::surface::fluids::lbm::d2q9::{
+        collision::bgk_collision_with_spherical_reflection,
+        relaxation::RelaxationParam,
+        space,
+        space::dbg_dist,
+        streaming::outflow_clipping_stream,
+    };
 
     #[test]
     fn test_debug_flow_loss() {
-        type B = Wgpu;
+        type B = PerfTestBackend;
         let device = Default::default();
 
         let k = 5;

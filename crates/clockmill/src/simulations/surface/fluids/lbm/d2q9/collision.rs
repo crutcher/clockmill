@@ -1,9 +1,23 @@
 //! # Collision Operators
 
-use crate::simulations::surface::fluids::lbm::d2q9::relaxation::{OmegaSource, RelaxationParam};
-use crate::simulations::surface::fluids::lbm::d2q9::{reflection, relaxation, space, thermal};
-use burn::Tensor;
-use burn::prelude::{Backend, Bool};
+use burn::{
+    Tensor,
+    prelude::{
+        Backend,
+        Bool,
+    },
+};
+
+use crate::simulations::surface::fluids::lbm::d2q9::{
+    reflection,
+    relaxation,
+    relaxation::{
+        OmegaSource,
+        RelaxationParam,
+    },
+    space,
+    thermal,
+};
 
 /// Bhatnagar-Gross-Krook collision operator.
 ///
@@ -67,18 +81,25 @@ pub fn bgk_collision_with_spherical_reflection<B: Backend>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use bunsen::support::testing::PerfTestBackend;
+    use burn::{
+        Tensor,
+        tensor::{
+            DType::F32,
+            Distribution,
+            Tolerance,
+        },
+    };
 
-    use crate::simulations::surface::fluids::lbm::d2q9::relaxation::RelaxationParam;
-    use crate::simulations::surface::fluids::lbm::d2q9::space::density;
-    use burn::Tensor;
-    use burn::backend::Wgpu;
-    use burn::tensor::DType::F32;
-    use burn::tensor::{Distribution, Tolerance};
+    use super::*;
+    use crate::simulations::surface::fluids::lbm::d2q9::{
+        relaxation::RelaxationParam,
+        space::density,
+    };
 
     #[test]
     fn test_collision_invariants() {
-        type B = Wgpu;
+        type B = PerfTestBackend;
         let device = Default::default();
 
         let dtype = F32;

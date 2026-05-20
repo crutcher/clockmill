@@ -8,21 +8,29 @@ repository.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+
+[lints]
+workspace = true
+
+
+[[bench]]
+name = "lbm"
+harness = false
+
+
+[features]
+default = []
+
+
 [dependencies]
 burn = { workspace = true }
-bimm-contracts = { workspace = true, features = ["burn"] }
+bunsen = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
-burn = { workspace = true, features = ["wgpu"] }
 nearly = { workspace = true }
 
 # For benchmarks:
 criterion = { workspace = true }
 
-[lints]
-workspace = true
 
-[[bench]]
-name = "lbm"
-harness = false

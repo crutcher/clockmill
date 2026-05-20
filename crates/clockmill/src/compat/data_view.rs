@@ -1,9 +1,16 @@
 //! # `TensorData` View Wrappers
 
-use crate::compat::shape::ravel_dims;
-use burn::prelude::TensorData;
-use burn::tensor::{AsIndex, Element};
 use std::ops::Index;
+
+use burn::{
+    prelude::TensorData,
+    tensor::{
+        AsIndex,
+        Element,
+    },
+};
+
+use crate::compat::shape::ravel_dims;
 
 /// Ravel Index View for a `TensorData`.
 #[derive(Debug)]
@@ -24,6 +31,7 @@ impl<'a, E: Element> TensorDataIndexView<'a, E> {
 
 impl<'a, I: AsIndex, E: Element> Index<&[I]> for TensorDataIndexView<'a, E> {
     type Output = E;
+
     fn index(
         &self,
         index: &[I],

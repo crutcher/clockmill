@@ -1,4 +1,5 @@
 # clockmill
+
 Rust/Burn Based 2D and 3D Grid Sims
 
 Early stages; will focus on frameworks for 2D and 3D Constant-Volume-Grid simulations;
@@ -35,9 +36,11 @@ Options:
 ```
 
 You must build with one of the following features:
- * `wgpu`
- * `cuda`
- * `metal`
+
+* `wgpu`
+* `cuda`
+* `metal`
+* `flex`
 
 Example:
 
@@ -48,7 +51,6 @@ $ cargo run --release -p lbm2d_vis --features wgpu
 ## conway_vis - Conway's Game of Life Demo
 
 [demo video](https://github.com/crutcher/clockmill/raw/refs/heads/main/docs/media/conway_vis.20251028.mp4)
-
 
 ```terminaloutput
 Conway's Game of Life demo for Burn
@@ -77,9 +79,11 @@ Options:
 ```
 
 You must build with one of the following features:
+
 * `wgpu`
 * `cuda`
 * `metal`
+* `flex`
 
 Example:
 
@@ -104,9 +108,11 @@ Options:
 ```
 
 You must build with one of the following features:
+
 * `wgpu`
 * `cuda`
 * `metal`
+* `flex`
 
 Example:
 

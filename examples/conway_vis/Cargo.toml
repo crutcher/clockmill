@@ -11,11 +11,11 @@ burn = { workspace = true, features = ["fusion", "autotune"] }
 
 clap = { workspace = true, features = ["derive"] }
 
-piston = { workspace = true}
-piston2d-graphics = { workspace = true}
-pistoncore-glutin_window = { workspace = true}
-piston2d-opengl_graphics = { workspace = true}
-gl = {workspace = true}
+piston = { workspace = true }
+piston2d-graphics = { workspace = true }
+pistoncore-glutin_window = { workspace = true }
+piston2d-opengl_graphics = { workspace = true }
+gl = { workspace = true }
 
 indicatif = { workspace = true }
 
@@ -24,7 +24,7 @@ workspace = true
 
 [features]
 default = []
-cuda = ["burn/cuda", "burn/cubecl"]
+cuda = ["burn/cuda"]
 metal = ["burn/metal"]
-wgpu = ["burn/wgpu", "burn/cubecl"]
+wgpu = ["burn/wgpu"]
 flex = ["burn/flex"]

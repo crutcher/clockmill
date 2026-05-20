@@ -1,10 +1,18 @@
 //! # Space Primitives
-use bimm_contracts::unpack_shape_contract;
-use burn::Tensor;
-use burn::module::Module;
-use burn::prelude::{Backend, ElementConversion, Int};
-use burn::tensor::DType;
-use burn::tensor::DType::F32;
+use bunsen::contracts::unpack_shape_contract;
+use burn::{
+    Tensor,
+    module::Module,
+    prelude::{
+        Backend,
+        ElementConversion,
+        Int,
+    },
+    tensor::{
+        DType,
+        DType::F32,
+    },
+};
 
 /// D2Q9 Direction Indices
 ///
@@ -265,7 +273,8 @@ pub fn moments<B: Backend>(
 ///
 /// Note the geometry: ``[H-2, W-2, VY=3, VX=3, WIN_Y=3, WIN_X=3]``
 /// - ``(H, W)``: the spatial position of the "current" cell.
-/// - ``(WIN_Y, WIN_X)``: the current window; with the current cell in the center.
+/// - ``(WIN_Y, WIN_X)``: the current window; with the current cell in the
+///   center.
 /// - ``(VY, VX)``: the 3x3 distribution in each cell.
 ///
 /// # Arguments
@@ -279,14 +288,15 @@ pub fn dist_windows<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 6> {
 
 #[cfg(test)]
 mod tests {
+    use bunsen::support::testing::PerfTestBackend;
+    use burn::tensor::Tolerance;
+
     use super::*;
     use crate::simulations::surface::fluids::lbm::d2q9::space::velocity_squared;
-    use burn::backend::Wgpu;
-    use burn::tensor::Tolerance;
 
     #[test]
     fn test_population_density() {
-        type B = Wgpu;
+        type B = PerfTestBackend;
         let device = Default::default();
 
         let dist: Tensor<B, 4> = Tensor::from_data(
@@ -313,7 +323,7 @@ mod tests {
 
     #[test]
     fn test_direction_vectors() {
-        type B = Wgpu;
+        type B = PerfTestBackend;
         let device = Default::default();
 
         let e: Tensor<B, 3> = direction_vectors(&device);
@@ -334,7 +344,7 @@ mod tests {
 
     #[test]
     fn test_weight_matrix() {
-        type B = Wgpu;
+        type B = PerfTestBackend;
         let device = Default::default();
 
         let w: Tensor<B, 2> = weight_matrix(&device);
@@ -355,7 +365,7 @@ mod tests {
 
     #[test]
     fn test_momentum_and_velocity() {
-        type B = Wgpu;
+        type B = PerfTestBackend;
         let device = Default::default();
 
         let dist: Tensor<B, 4> = Tensor::from_data(

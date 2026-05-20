@@ -1,27 +1,54 @@
-use burn::prelude::{Backend, TensorData};
+use std::{
+    sync::{
+        Arc,
+        Mutex,
+        atomic::{
+            AtomicBool,
+            Ordering,
+        },
+    },
+    thread,
+    thread::JoinHandle,
+    time::Duration,
+};
+
+use burn::prelude::{
+    Backend,
+    TensorData,
+};
 use clap::Parser;
-use clockmill::compat::shape::ravel_dims;
-use clockmill::framework::config_parsers::parse_shape;
-use clockmill::simulations::surface::conway::life2d::{ConwayLife2DConfig, ConwayLife2DState};
+use clockmill::{
+    compat::shape::ravel_dims,
+    framework::config_parsers::parse_shape,
+    simulations::surface::conway::life2d::{
+        ConwayLife2DConfig,
+        ConwayLife2DState,
+    },
+};
 use glutin_window::GlutinWindow as Window;
 use indicatif::ProgressBar;
-use opengl_graphics::{GlGraphics, OpenGL};
-use piston::event_loop::{EventSettings, Events};
-use piston::input::RenderEvent;
-use piston::window::WindowSettings;
-use piston::{EventLoop, OpenGLWindow, RenderArgs};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::thread;
-use std::thread::JoinHandle;
-use std::time::Duration;
+use opengl_graphics::{
+    GlGraphics,
+    OpenGL,
+};
+use piston::{
+    EventLoop,
+    OpenGLWindow,
+    RenderArgs,
+    event_loop::{
+        EventSettings,
+        Events,
+    },
+    input::RenderEvent,
+    window::WindowSettings,
+};
 
 /// Conway's Game of Life demo for Burn.
 #[derive(Parser, Debug)]
 #[command(long_about = None)]
 pub struct Args {
     /// The grid shape as `HEIGHT,WIDTH`, or `SIZE`.
-    #[arg(long, value_parser=parse_shape, default_value="400")]
+    #[arg(long, value_parser=parse_shape, default_value="1200")]
     pub grid_shape: [usize; 2],
 
     /// The number of steps to skip on init.
@@ -45,7 +72,7 @@ pub struct Args {
     pub tps: f32,
 
     /// The initial window zoom.
-    #[arg(long, default_value_t = 1.5)]
+    #[arg(long, default_value_t = 1.0)]
     pub zoom: f64,
 
     /// The opacity between frames.
@@ -58,13 +85,13 @@ fn main() {
     println!("{:#?}", args);
 
     #[cfg(feature = "wgpu")]
-    run::<burn::backend::Wgpu>(&args);
+    run::<burn::backend::Wgpu<burn::tensor::f16, i8>>(&args);
 
     #[cfg(feature = "cuda")]
-    run::<burn::backend::Cuda>(&args);
+    run::<burn::backend::Cuda<burn::tensor::f16, i8>>(&args);
 
     #[cfg(feature = "metal")]
-    run::<burn::backend::Metal>(&args);
+    run::<burn::backend::Metal<burn::tensor::f16, i8>>(&args);
 
     #[cfg(feature = "flex")]
     run::<burn::backend::Flex>(&args);
@@ -88,6 +115,13 @@ fn run<B: Backend>(args: &Args) {
         Some(std::time::Duration::from_secs_f32(1.0 / args.tps))
     };
     let export_duration = std::time::Duration::from_secs_f32(1.0 / args.fps as f32);
+
+    let export_duration = if let Some(tic_duration) = tic_duration {
+        std::cmp::max(export_duration, tic_duration)
+    } else {
+        export_duration
+    };
+
     let sim = Simulation::new(conway, args.update_noise, tic_duration, export_duration);
 
     // Change this to OpenGL::V2_1 if not working.

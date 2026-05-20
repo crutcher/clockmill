@@ -1,7 +1,12 @@
 //! # Reflection Operations
 
-use burn::Tensor;
-use burn::prelude::{Backend, Bool};
+use burn::{
+    Tensor,
+    prelude::{
+        Backend,
+        Bool,
+    },
+};
 
 /// Computes spherical solid reflection updates.
 ///
@@ -16,7 +21,8 @@ pub fn spherical_reflection<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 4> {
     dist.flip([2, 3])
 }
 
-/// Applies isotropic spherical solid reflection updates to [`operations::bgk_collision`].
+/// Applies isotropic spherical solid reflection updates to
+/// [`operations::bgk_collision`].
 ///
 /// This models every solid point as a sphere, normal to all directions.
 ///

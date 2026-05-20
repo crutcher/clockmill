@@ -1,8 +1,14 @@
 //! # Streaming Operations
 
+use burn::{
+    Tensor,
+    prelude::{
+        Backend,
+        s,
+    },
+};
+
 use crate::simulations::surface::fluids::lbm::d2q9::space;
-use burn::Tensor;
-use burn::prelude::{Backend, s};
 
 /// Apply the streaming update step to the non-border cells of a population.
 ///
@@ -14,7 +20,7 @@ use burn::prelude::{Backend, s};
 /// - The updated ``[H[1:-1], W[1:-1], VY=3, VX=3]`` interior.
 pub fn stream_interior_windows<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 4> {
     #[cfg(debug_assertions)]
-    let [h, w] = bimm_contracts::unpack_shape_contract!(
+    let [h, w] = bunsen::contracts::unpack_shape_contract!(
         ["H", "W", "VY", "VX"],
         dist.shape().as_slice(),
         &["H", "W"],
@@ -24,8 +30,8 @@ pub fn stream_interior_windows<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 4> {
     let windows = space::dist_windows(dist);
 
     // Timing: crutcher, Oct 2025:
-    // cat([cat([tensor,]),]) is ~10% faster than cat([tensor,]).reshape([..., 3, 3])
-    // Timing: crutcher, Oct 2025:
+    // cat([cat([tensor,]),]) is ~10% faster than cat([tensor,]).reshape([..., 3,
+    // 3]) Timing: crutcher, Oct 2025:
     // This also beats empty() + 0..3 0..3 slice_assign by ~8%
     let result: Tensor<B, 4> = Tensor::cat(
         (0..3)
@@ -51,7 +57,7 @@ pub fn stream_interior_windows<B: Backend>(dist: Tensor<B, 4>) -> Tensor<B, 4> {
     );
 
     #[cfg(debug_assertions)]
-    bimm_contracts::assert_shape_contract_periodically!(
+    bunsen::contracts::assert_shape_contract_periodically!(
         ["H" - "PAD", "W" - "PAD", "VY", "VX"],
         result.shape().as_slice(),
         &[("H", h), ("W", w), ("PAD", 2), ("VY", 3), ("VX", 3)]
@@ -155,13 +161,14 @@ pub fn outflow_clipping_stream<B: Backend>(thermal_dist: Tensor<B, 4>) -> Tensor
 
 #[cfg(test)]
 mod tests {
+    use bunsen::support::testing::PerfTestBackend;
+
     use super::*;
-    use burn::backend::Wgpu;
 
     #[test]
     #[rustfmt::skip]
     fn test_stream_interior_windows() {
-        type B = Wgpu;
+        type B = PerfTestBackend;
         let device = Default::default();
 
         let state: Tensor<B, 4> = Tensor::from_data([

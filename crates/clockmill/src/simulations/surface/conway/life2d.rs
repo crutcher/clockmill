@@ -1,9 +1,21 @@
 //! # 2D Conway's Game of Life
 
-use burn::Tensor;
-use burn::config::Config;
-use burn::prelude::{Backend, Bool, Int, SliceArg, ToElement, s};
-use burn::tensor::{Distribution, Slice};
+use burn::{
+    Tensor,
+    config::Config,
+    prelude::{
+        Backend,
+        Bool,
+        Int,
+        SliceArg,
+        ToElement,
+        s,
+    },
+    tensor::{
+        Distribution,
+        Slice,
+    },
+};
 
 /// Fuzz the state.
 ///
@@ -145,7 +157,7 @@ pub fn next_state_wrapped_2d<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B,
 /// - the ``[H-2, W-2]`` evolved interior state.
 pub fn next_interior_2d<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
     #[cfg(debug_assertions)]
-    let [h, w] = bimm_contracts::unpack_shape_contract!(["h", "w"], &state.dims(),);
+    let [h, w] = bunsen::contracts::unpack_shape_contract!(["h", "w"], &state.dims(),);
 
     // [H, W]
     let is_live = state.clone().slice(s![1..-1, 1..-1,]);
@@ -171,7 +183,7 @@ pub fn next_interior_2d<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, B
     let inner = is_2.bool_and(is_live).bool_or(is_3);
 
     #[cfg(debug_assertions)]
-    bimm_contracts::assert_shape_contract_periodically!(
+    bunsen::contracts::assert_shape_contract_periodically!(
         ["h" - "pad", "w" - "pad"],
         &inner.dims(),
         &[("h", h), ("w", w), ("pad", 2)],
@@ -276,14 +288,17 @@ impl<B: Backend> ConwayLife2DState<B> {
 
 #[cfg(test)]
 mod tests {
+    use bunsen::support::testing::PerfTestBackend;
+    use burn::{
+        prelude::s,
+        tensor::TensorData,
+    };
+
     use super::*;
-    use burn::backend::Wgpu;
-    use burn::prelude::s;
-    use burn::tensor::TensorData;
 
     #[test]
     fn test_smoke() {
-        type B = Wgpu;
+        type B = PerfTestBackend;
         let device = Default::default();
 
         let steps = 100;
@@ -302,9 +317,10 @@ mod tests {
 
     #[test]
     fn test_logic() {
+        type B = PerfTestBackend;
         let device = Default::default();
         let config = ConwayLife2DConfig { shape: [5, 5] };
-        let mut conway: ConwayLife2DState<Wgpu> = config.init(&device);
+        let mut conway: ConwayLife2DState<B> = config.init(&device);
 
         assert_eq!(
             conway.read_slice(s![1..3, 1..3]),

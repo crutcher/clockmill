@@ -1,20 +1,38 @@
-use burn::Tensor;
-use burn::backend::Wgpu;
-use burn::prelude::{Bool, s};
-use burn::tensor::DType::{F32, F64};
-use burn::tensor::Distribution;
-use clockmill::simulations::surface::fluids::lbm::d2q9::collision::{
-    bgk_collision, bgk_collision_with_spherical_reflection,
-};
-use clockmill::simulations::surface::fluids::lbm::d2q9::reflection::with_spherical_reflection;
-use clockmill::simulations::surface::fluids::lbm::d2q9::relaxation::RelaxationParam;
-use clockmill::simulations::surface::fluids::lbm::d2q9::space::LbmTables;
-use clockmill::simulations::surface::fluids::lbm::d2q9::streaming::stream_interior_windows;
-use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
+use bunsen::support::testing::PerfTestBackend;
+use burn::{
+    Tensor,
+    prelude::{
+        Bool,
+        s,
+    },
+    tensor::{
+        DType::{
+            F32,
+            F64,
+        },
+        Distribution,
+    },
+};
+use clockmill::simulations::surface::fluids::lbm::d2q9::{
+    collision::{
+        bgk_collision,
+        bgk_collision_with_spherical_reflection,
+    },
+    reflection::with_spherical_reflection,
+    relaxation::RelaxationParam,
+    space::LbmTables,
+    streaming::stream_interior_windows,
+};
+use criterion::{
+    Criterion,
+    criterion_group,
+    criterion_main,
+};
+
 fn bench_lbm_d2q9(c: &mut Criterion) {
-    type B = Wgpu;
+    type B = PerfTestBackend;
     let device = Default::default();
 
     let n = 1000;

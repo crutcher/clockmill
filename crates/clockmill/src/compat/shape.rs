@@ -1,7 +1,12 @@
 //! # Shape Helpers
 
-use burn::prelude::Shape;
-use burn::tensor::{AsIndex, wrap_index};
+use burn::{
+    prelude::Shape,
+    tensor::{
+        AsIndex,
+        wrap_index,
+    },
+};
 
 /// Compute the ravel index for the given coordinates.
 ///

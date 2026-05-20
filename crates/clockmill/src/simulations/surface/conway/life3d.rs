@@ -1,11 +1,22 @@
 //! # 3D Conway's Game of Life
 
-use burn::Tensor;
-use burn::config::Config;
-use burn::prelude::{Backend, Bool, Int, s};
-use burn::tensor::Distribution;
-use serde::{Deserialize, Serialize};
 use std::ops::Range;
+
+use burn::{
+    Tensor,
+    config::Config,
+    prelude::{
+        Backend,
+        Bool,
+        Int,
+        s,
+    },
+    tensor::Distribution,
+};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 /// Fuzz the state.
 ///
@@ -94,7 +105,7 @@ fn next_interior_3d<B: Backend>(
     rules: &LifeRules,
 ) -> Tensor<B, 3, Bool> {
     #[cfg(debug_assertions)]
-    let [h, w, z] = bimm_contracts::unpack_shape_contract!(["h", "w", "z"], &state.dims(),);
+    let [h, w, z] = bunsen::contracts::unpack_shape_contract!(["h", "w", "z"], &state.dims(),);
 
     // [H, W, Z]
     let is_live = state.clone().slice(s![1..-1, 1..-1, 1..-1,]);
@@ -133,7 +144,7 @@ fn next_interior_3d<B: Backend>(
 
     let update = spawns.bool_or(keeps);
     #[cfg(debug_assertions)]
-    bimm_contracts::assert_shape_contract_periodically!(
+    bunsen::contracts::assert_shape_contract_periodically!(
         ["h" - "pad", "w" - "pad", "z" - "pad"],
         &update.dims(),
         &[("h", h), ("w", w), ("z", z), ("pad", 2)],
@@ -233,12 +244,13 @@ impl<B: Backend> ConwayLife3DState<B> {
 
 #[cfg(test)]
 mod tests {
+    use bunsen::support::testing::PerfTestBackend;
+
     use super::*;
-    use burn::backend::Wgpu;
 
     #[test]
     fn test_smoke() {
-        type B = Wgpu;
+        type B = PerfTestBackend;
         let device = Default::default();
 
         let steps = 100;

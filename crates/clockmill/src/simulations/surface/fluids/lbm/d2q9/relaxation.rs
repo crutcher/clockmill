@@ -1,8 +1,13 @@
 //! # Thermal Relaxation
-use burn::Tensor;
-use burn::prelude::Backend;
-use burn::tensor::DType;
-use serde::{Deserialize, Serialize};
+use burn::{
+    Tensor,
+    prelude::Backend,
+    tensor::DType,
+};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 /// The relaxation operator for [`operations::bgk_collision`].
 ///
@@ -102,6 +107,7 @@ impl RelaxationParam {
             }
         }
     }
+
     /// Get the relaxation frequency (1/tau), typically in (0, 2)
     pub fn as_omega_value(&self) -> f64 {
         match self {
@@ -121,8 +127,9 @@ impl RelaxationParam {
 
 #[cfg(test)]
 mod tests {
+    use bunsen::support::testing::PerfTestBackend;
+
     use super::*;
-    use burn::backend::Wgpu;
 
     #[test]
     fn test_relaxation_param() {
@@ -153,7 +160,7 @@ mod tests {
 
     #[test]
     fn test_omega_source_from_relaxation() {
-        type B = Wgpu;
+        type B = PerfTestBackend;
         let device = Default::default();
 
         let relaxation = RelaxationParam::Omega(1.0);
